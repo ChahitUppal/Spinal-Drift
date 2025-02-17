@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Swim String Editor</title>
+  <style>
+    body {
+      background: linear-gradient(135deg, #74ABE2, #5563DE);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #333;
+    }
+    .container {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      max-width: 500px;
+      width: 90%;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 1.8rem;
+      color: #5563DE;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: 2px solid #ddd;
+      border-radius: 5px;
+      resize: vertical;
+      transition: border-color 0.3s ease;
+    }
+    textarea:focus {
+      border-color: #5563DE;
+      outline: none;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 0.75rem;
+      margin-top: 1rem;
+      font-size: 1.1rem;
+      border: none;
+      border-radius: 5px;
+      background-color: #5563DE;
+      color: #fff;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #3f4bb8;
+    }
+    .status {
+      margin-top: 0.75rem;
+      text-align: center;
+      font-size: 0.9rem;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Swim String Editor</h1>
+    <textarea id="message" placeholder="Loading message..."></textarea>
+    <button id="submitBtn">Save Message</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const getUrl = 'https://nickwood5.pythonanywhere.com/get_swim_string';
+    const setUrlBase = 'https://nickwood5.pythonanywhere.com/set_swim_string/';
+    
+    // Function to load the current message into the text area
+    async function loadMessage() {
+      try {
+        const response = await fetch(getUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        const text = await response.text();
+        document.getElementById('message').value = text;
+      } catch (error) {
+        console.error('Error fetching the current message:', error);
+        document.getElementById('message').value = 'Error loading message.';
+      }
+    }
+    
+    // Function to submit a new message
+    async function submitMessage() {
+      const newMsg = document.getElementById('message').value;
+      const statusDiv = document.getElementById('status');
+      if (!newMsg) {
+        alert('Please type a message before saving.');
+        return;
+      }
+      const encodedMsg = encodeURIComponent(newMsg);
+      const url = setUrlBase + encodedMsg;
+      
+      // Provide user feedback while saving
+      statusDiv.textContent = 'Saving message...';
+      
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        statusDiv.textContent = 'Message updated successfully!';
+      } catch (error) {
+        console.error('Error setting the new message:', error);
+        statusDiv.textContent = 'Error saving message.';
+      }
+      
+      // Optionally, reload the message from the API after saving
+      setTimeout(loadMessage, 500);
+    }
+    
+    // Set up event listeners when the page loads
+    window.addEventListener('DOMContentLoaded', () => {
+      loadMessage();
+      document.getElementById('submitBtn').addEventListener('click', submitMessage);
+    });
+  </script>
+</body>
+</html>
