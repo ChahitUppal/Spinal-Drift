@@ -38,6 +38,8 @@ class IMUBroadcastConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.id = self.scope["url_route"]["kwargs"]["id"]
 
+        await self.accept()
+
         # If this ID has never uploaded data, disconnect immediately
         if self.id not in id_to_data:
             await self.send(text_data=json.dumps({"error": f"Invalid ID: {self.id}"}))
@@ -48,7 +50,6 @@ class IMUBroadcastConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(
             f"imu_broadcast_group_{self.id}", self.channel_name
         )
-        await self.accept()
 
         await self.send(
             text_data=json.dumps({"message": "Connected to IMU Broadcast Consumer"})
