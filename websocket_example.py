@@ -1,26 +1,42 @@
 import asyncio
-import websockets
 import json
+import websockets
 
-WS_URL = "wss://personal-site-oi5a.onrender.com/api/ws/ping/"
 
-async def websocket_client():
-    async with websockets.connect(WS_URL) as websocket:
-        # Create payload
-        connect_response = await websocket.recv()
-        print(f"Received connect response: {connect_response}")
+async def send_imu_data(
+    imu_id: str, data: dict, host: str
+):
+    # Construct the websocket URL
+    ws_url = f"wss://{host}/api/ws/imu/{imu_id}/upload/"
 
-        payload = json.dumps({"image": "test"})
+    print(f"Connecting to {ws_url}...")
+    async with websockets.connect(ws_url) as websocket:
+        # Convert Python dictionary to JSON string
+        message = json.dumps(data)
 
-        # Send data
-        await websocket.send(payload)
-        print("Message sent")
+        print(f"Sending data: {message}")
+        await websocket.send(message)
 
-        # Receive response
+        # Optionally receive a response from the server
         response = await websocket.recv()
+        print(f"Received from server: {response}")
 
-        print(f"Received response: {response}")
-        
 
-# Run the client
-asyncio.run(websocket_client())
+async def main():
+    # Example usage:
+    # Replace "my_imu_id" with your desired IMU ID from the URL route
+    # and change the data payload as needed.
+    imu_id = "my_imu_id22"
+    data_payload = {
+        "accelerometer": {"x": 0.12, "y": -0.98, "z": 1.23},
+        "gyroscope": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "timestamp": 167768051733,
+    }
+
+    await send_imu_data(
+        imu_id, data_payload, host="personal-site-oi5a.onrender.com", port=8000
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
