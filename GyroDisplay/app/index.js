@@ -68,9 +68,9 @@ export default function App() {
       const currentPosition = latestValuesRef.current.position;
       
       // First add debug prints to see if we're getting updates
-      console.log(`DEBUG - Raw tilt: X:${currentTilt.x.toFixed(2)}, Y:${currentTilt.y.toFixed(2)}, Z:${currentTilt.z.toFixed(2)}`);
-      console.log(`DEBUG - Ball position: X:${currentPosition.x.toFixed(2)}, Y:${currentPosition.y.toFixed(2)}`);
-      console.log(`DEBUG - Update counter: ${updateCounterRef.current}`);
+      // console.log(`DEBUG - Raw tilt: X:${currentTilt.x.toFixed(2)}, Y:${currentTilt.y.toFixed(2)}, Z:${currentTilt.z.toFixed(2)}`);
+      // console.log(`DEBUG - Ball position: X:${currentPosition.x.toFixed(2)}, Y:${currentPosition.y.toFixed(2)}`);
+      // console.log(`DEBUG - Update counter: ${updateCounterRef.current}`);
       
       const logData = {
         timestamp: new Date().toISOString(),
@@ -117,7 +117,7 @@ export default function App() {
       updateCounterRef.current += 1;
       
       // Store raw data for debugging
-      console.log(`Gyro update: X:${data.x.toFixed(2)}, Y:${data.y.toFixed(2)}, Z:${data.z.toFixed(2)}`);
+      // console.log(`Gyro update: X:${data.x.toFixed(2)}, Y:${data.y.toFixed(2)}, Z:${data.z.toFixed(2)}`);
       
       // Accumulate the tilt - this creates the persistent tilt effect
       setTilt(prevTilt => {
@@ -141,8 +141,8 @@ export default function App() {
         
         // Calculate new ball position based on tilt - FIXED: Swapped x and y orientation
         const scaleFactor = CIRCLE_RADIUS * 0.65; // Reduced to ensure ball stays within circle
-        const rawX = -result.x * scaleFactor; // Changed from result.y to -result.x
-        const rawY = -result.y * scaleFactor; // Changed from -result.x to -result.y
+        const rawX = result.y * scaleFactor; 
+        const rawY = -result.x * scaleFactor; 
         
         // Ensure ball stays within the circle boundaries
         const distance = Math.sqrt(rawX * rawX + rawY * rawY);
@@ -209,8 +209,8 @@ export default function App() {
     let description = [];
     
     // Updated to properly indicate forward/backward based on fixed x-orientation
-    if (tilt.x < -0.1) description.push("Forward");
-    else if (tilt.x > 0.1) description.push("Backward");
+    if (tilt.x < -0.1) description.push("Backward");
+    else if (tilt.x > 0.1) description.push("Forward");
     
     if (tilt.y < -0.1) description.push("Right");
     else if (tilt.y > 0.1) description.push("Left");
@@ -260,7 +260,7 @@ export default function App() {
                 {
                   transform: [
                     { translateX: position.x },
-                    { translateY: position.y }
+                    { translateY: -position.y }
                   ]
                 }
               ]}
