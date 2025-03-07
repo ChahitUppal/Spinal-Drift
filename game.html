@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>IMU Game - Endless Runner</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 24px;
+      z-index: 1;
+    }
+    #gameOver {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: red;
+      font-size: 48px;
+      display: none;
+      z-index: 1;
+    }
+    #imuPanel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 10px;
+      z-index: 1;
+    }
+    #output {
+      max-height: 100px;
+      overflow-y: scroll;
+      font-size: 12px;
+    }
+    #startGameBtn {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      font-size: 18px;
+      z-index: 1;
+    }
+  </style>
+  <!-- Include three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <!-- Score display -->
+  <div id="score">Score: 0</div>
+  <!-- Game Over message -->
+  <div id="gameOver">Game Over</div>
+  <!-- IMU connection panel -->
+  <div id="imuPanel">
+    <label for="imuIdInput">Enter IMU ID:</label>
+    <input type="text" id="imuIdInput" placeholder="e.g., my_imu_id" />
+    <button id="connectBtn">Connect</button>
+    <pre id="output"></pre>
+  </div>
+  <!-- Start Game button -->
+  <button id="startGameBtn">Start Game</button>
+  
+  <script>
+    // ----------------------
+    // Three.js Game Variables
+    // ----------------------
+    let scene, camera, renderer, player;
+    let obstacles = [];
+    let gameOver = false;
+    let score = 0;
+    const playerSpeed = 0.2;         // Constant forward movement speed
+    const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
+    let currentTilt = { x: 0, y: 0, z: 0 }; // Latest IMU tilt values (in radians)
+    let animationId; // To store the requestAnimationFrame ID
+
+    // Initialize the three.js scene and game objects
+    function init() {
+      // Create scene and set background color
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87CEEB); // sky blue
+
+      // Create a perspective camera
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 5, -10);
+      camera.lookAt(0, 0, 0);
+
+      // Create renderer and add to the document
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // Create a long ground plane for the player to run on
+      const groundGeometry = new THREE.PlaneGeometry(100, 1000);
+      const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+      const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.z = 500 / 2; // center the plane along z
+      scene.add(ground);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(0, 50, -50);
+      scene.add(directionalLight);
+
+      // Create the player (a simple blue cube)
+      const playerGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const playerMaterial = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+      player = new THREE.Mesh(playerGeometry, playerMaterial);
+      player.position.set(0, 0.5, 0);
+      scene.add(player);
+
+      // Generate obstacles (red cubes) along the track
+      generateObstacles();
+
+      // Listen for window resize events
+      window.addEventListener('resize', onWindowResize, false);
+
+      // Start the animation loop
+      animate();
+    }
+
+    // Adjust camera and renderer on window resize
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Generate obstacles at intervals along the z-axis with random x positions
+    function generateObstacles() {
+      const obstacleGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const obstacleMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+      for (let z = 20; z < 500; z += 20) {
+        const x = Math.random() * 10 - 5; // Random x between -5 and 5
+        const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+        obstacle.position.set(x, 0.5, z);
+        scene.add(obstacle);
+        obstacles.push(obstacle);
+      }
+    }
+
+    // Check collision between player and obstacles using bounding boxes
+    function checkCollisions() {
+      const playerBox = new THREE.Box3().setFromObject(player);
+      for (let obs of obstacles) {
+        const obsBox = new THREE.Box3().setFromObject(obs);
+        if (playerBox.intersectsBox(obsBox)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Update the score display based on player's z position
+    function updateScore() {
+      score = Math.floor(player.position.z);
+      document.getElementById("score").textContent = "Score: " + score;
+    }
+
+    // The main animation loop
+    function animate() {
+      if (gameOver) return; // Stop the loop if game is over
+      animationId = requestAnimationFrame(animate);
+
+      // Constantly move the player forward along the z-axis
+      player.position.z += playerSpeed;
+
+      // Convert the current IMU tilt from radians to degrees
+      const tiltInDegrees = currentTilt.x * (180 / Math.PI);
+      // Use the tilt (in degrees) to adjust the player's x position
+      // Negative tilt moves left; positive moves right.
+      player.position.x += tiltInDegrees * lateralSpeedFactor;
+
+      // Keep the player within horizontal bounds
+      if (player.position.x < -10) player.position.x = -10;
+      if (player.position.x > 10) player.position.x = 10;
+
+      // Update camera position to follow the player
+      camera.position.z = player.position.z - 10;
+      camera.position.x = player.position.x;
+      camera.lookAt(player.position.x, player.position.y, player.position.z);
+
+      // Collision detection
+      if (checkCollisions()) {
+        endGame();
+      }
+
+      updateScore();
+      renderer.render(scene, camera);
+    }
+
+    // End the game by stopping the animation loop and showing a Game Over message
+    function endGame() {
+      gameOver = true;
+      cancelAnimationFrame(animationId);
+      document.getElementById("gameOver").style.display = "block";
+    }
+
+    // ----------------------
+    // WebSocket (IMU Data) Code
+    // ----------------------
+    let socket = null;
+    document.getElementById("connectBtn").addEventListener("click", function() {
+      const imuId = document.getElementById("imuIdInput").value.trim();
+      if (!imuId) {
+        alert("Please enter an IMU ID.");
+        return;
+      }
+
+      const wsUrl = `wss://personal-site-oi5a.onrender.com/api/ws/imu/${imuId}/broadcast/`;
+      console.log("Connecting to", wsUrl);
+
+      // Close any existing connection before creating a new one
+      if (socket) {
+        socket.close();
+      }
+
+      socket = new WebSocket(wsUrl);
+
+      socket.onopen = function(event) {
+        console.log("Connected to:", wsUrl);
+        appendOutput(`Connected to: ${wsUrl}`);
+      };
+
+      socket.onmessage = function(event) {
+        console.log("Message from server:", event.data);
+        appendOutput(event.data);
+
+        try {
+          const msg = JSON.parse(event.data);
+          // Update current tilt values if available in the message (tilt values are in radians)
+          if (msg.data && msg.data.tilt) {
+            currentTilt = msg.data.tilt;
+          }
+        } catch (e) {
+          console.error("Error parsing message:", e);
+        }
+      };
+
+      socket.onclose = function(event) {
+        console.log("Disconnected from server");
+        appendOutput("Disconnected from server");
+      };
+
+      socket.onerror = function(error) {
+        console.error("WebSocket error:", error);
+        appendOutput("WebSocket error. Check the console for details.");
+      };
+    });
+
+    // Helper function to append messages to the output element
+    function appendOutput(message) {
+      const outputElem = document.getElementById("output");
+      outputElem.textContent += message + "\n";
+    }
+
+    // ----------------------
+    // Start Game on Button Click (after ensuring an IMU ID is provided)
+    // ----------------------
+    document.getElementById("startGameBtn").addEventListener("click", function() {
+      const imuId = document.getElementById("imuIdInput").value.trim();
+      if (!imuId) {
+        alert("Please enter an IMU ID before starting the game.");
+        return;
+      }
+      // If not already connected, trigger the connect button click to establish the WebSocket connection.
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        document.getElementById("connectBtn").click();
+      }
+      // Hide the Start Game button and initialize the game.
+      this.style.display = "none";
+      init();
+    });
+  </script>
+</body>
+</html>
