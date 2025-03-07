@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput } from "react-native";
 import { Gyroscope } from "expo-sensors";
 
 const { width } = Dimensions.get("window");
 const CIRCLE_RADIUS = width * 0.35;
 const BALL_RADIUS = 15;
+
+// WebSocket connection constants
+const WS_HOST = "personal-site-oi5a.onrender.com";
+const IMU_ID = "tilt_balance_game_sensor_01"; // You can use this IMU ID on the server
 
 export default function App() {
   // Logging interval in milliseconds (can be changed)
@@ -20,7 +24,12 @@ export default function App() {
   const [isInitialized, setIsInitialized] = useState(false);
   
   // Debug values to track data flow
-  const [debugValues, setDebugValues] = useState({ gyroActive: false, lastUpdate: 0 });
+  const [debugValues, setDebugValues] = useState({ 
+    gyroActive: false, 
+    lastUpdate: 0,
+    wsConnected: false,
+    lastWsMessage: ""
+  });
   
   // Sensor subscription
   const [subscription, setSubscription] = useState(null);
@@ -33,15 +42,20 @@ export default function App() {
   
   // Ref to store the latest tilt and position values for logging
   const latestValuesRef = useRef({ tilt: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0 } });
+  
+  // WebSocket reference
+  const wsRef = useRef(null);
 
   useEffect(() => {
     console.log("App initialized - subscribing to sensors");
     _subscribeToSensors();
     _startLogging();
+    _connectWebSocket();
     
     return () => {
       _unsubscribeFromSensors();
       _stopLogging();
+      _disconnectWebSocket();
     };
   }, [loggingInterval]);
 
@@ -54,6 +68,68 @@ export default function App() {
   useEffect(() => {
     latestValuesRef.current.position = position;
   }, [position]);
+
+  // WebSocket connection function
+  const _connectWebSocket = () => {
+    try {
+      const wsUrl = `wss://${WS_HOST}/api/ws/imu/${IMU_ID}/upload/`;
+      console.log(`Connecting to WebSocket: ${wsUrl}`);
+      
+      // Close existing connection if any
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      
+      // Create new WebSocket connection
+      wsRef.current = new WebSocket(wsUrl);
+      
+      wsRef.current.onopen = () => {
+        console.log("WebSocket connection established");
+        setDebugValues(prev => ({...prev, wsConnected: true}));
+      };
+      
+      wsRef.current.onclose = () => {
+        console.log("WebSocket connection closed");
+        setDebugValues(prev => ({...prev, wsConnected: false}));
+        
+        // Attempt to reconnect after 5 seconds
+        setTimeout(_connectWebSocket, 5000);
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        setDebugValues(prev => ({...prev, wsConnected: false}));
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        console.log("WebSocket message received:", event.data);
+        setDebugValues(prev => ({...prev, lastWsMessage: event.data}));
+      };
+    } catch (error) {
+      console.error("Error setting up WebSocket:", error);
+    }
+  };
+  
+  // WebSocket disconnection function
+  const _disconnectWebSocket = () => {
+    if (wsRef.current) {
+      console.log("Closing WebSocket connection");
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
+  
+  // Function to send data to WebSocket
+  const _sendDataToWebSocket = (data) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const message = JSON.stringify(data);
+      console.log(`Sending to WebSocket: ${message}`);
+      wsRef.current.send(message);
+    } else {
+      console.warn("WebSocket not connected, reconnecting...");
+      _connectWebSocket();
+    }
+  };
 
   const _startLogging = () => {
     // Clear any existing timer
@@ -73,7 +149,7 @@ export default function App() {
       // console.log(`DEBUG - Update counter: ${updateCounterRef.current}`);
       
       const logData = {
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         tilt: {
           x: currentTilt.x,
           y: currentTilt.y,
@@ -83,15 +159,29 @@ export default function App() {
           x: currentPosition.x / (CIRCLE_RADIUS * 0.8),
           y: currentPosition.y / (CIRCLE_RADIUS * 0.8)
         },
+        gyroscope: {
+          x: currentTilt.x,
+          y: currentTilt.y,
+          z: currentTilt.z
+        },
+        accelerometer: {
+          x: 0, // We don't have accelerometer data in this app
+          y: 0,
+          z: 0
+        },
         updateCounter: updateCounterRef.current,
         sensorStatus: debugValues.gyroActive ? "active" : "inactive",
         lastUpdateTime: debugValues.lastUpdate
       };
       
       console.log(JSON.stringify(logData, null, 2));
+      
+      // Send data to WebSocket server
+      _sendDataToWebSocket(logData);
+      
     }, loggingInterval);
   };
-
+  
   const _stopLogging = () => {
     if (loggingTimerRef.current) {
       clearInterval(loggingTimerRef.current);
@@ -108,10 +198,11 @@ export default function App() {
     // Subscribe to gyroscope
     const gyroSubscription = Gyroscope.addListener(data => {
       // Update debug values to track sensor activity
-      setDebugValues({
+      setDebugValues(prev => ({
+        ...prev,
         gyroActive: true,
         lastUpdate: Date.now()
-      });
+      }));
       
       // Increment update counter to track activity
       updateCounterRef.current += 1;
@@ -239,6 +330,10 @@ export default function App() {
         <Text style={styles.sensorStatus}>
           Sensor: {debugValues.gyroActive ? "Active" : "Inactive"}
         </Text>
+        <Text style={styles.sensorStatus}>
+          WebSocket: {debugValues.wsConnected ? "Connected" : "Disconnected"}
+        </Text>
+        <Text style={styles.wsNote}>IMU ID: {IMU_ID}</Text>
       </View>
       
       <View style={styles.platformContainer}>
@@ -315,6 +410,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#aaaaaa",
     marginTop: 10
+  },
+  wsNote: {
+    fontSize: 14,
+    color: "#4a90e2",
+    marginTop: 5
   },
   platformContainer: {
     alignItems: "center",
