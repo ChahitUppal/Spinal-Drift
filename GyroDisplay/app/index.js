@@ -8,11 +8,11 @@ const BALL_RADIUS = 15;
 
 // WebSocket connection constants
 const WS_HOST = "personal-site-oi5a.onrender.com";
-const IMU_ID = "tilt_balance_game_sensor_01"; // You can use this IMU ID on the server
+const IMU_ID = "nick2"; // You can use this IMU ID on the server
 
 export default function App() {
   // Logging interval in milliseconds (can be changed)
-  const [loggingInterval, setLoggingInterval] = useState(1000);
+  const [loggingInterval, setLoggingInterval] = useState(50);
   
   // Accumulated tilt values that persist
   const [tilt, setTilt] = useState({ x: 0, y: 0, z: 0 });
@@ -72,6 +72,7 @@ export default function App() {
   // WebSocket connection function
   const _connectWebSocket = () => {
     try {
+      console.log("HELLO");
       const wsUrl = `wss://${WS_HOST}/api/ws/imu/${IMU_ID}/upload/`;
       console.log(`Connecting to WebSocket: ${wsUrl}`);
       
@@ -93,7 +94,7 @@ export default function App() {
         setDebugValues(prev => ({...prev, wsConnected: false}));
         
         // Attempt to reconnect after 5 seconds
-        setTimeout(_connectWebSocket, 5000);
+        //setTimeout(_connectWebSocket, 0);
       };
       
       wsRef.current.onerror = (error) => {
@@ -121,6 +122,9 @@ export default function App() {
   
   // Function to send data to WebSocket
   const _sendDataToWebSocket = (data) => {
+
+    // COMMENTING THIS STUFF OUT FIXES IT
+    /*console.log(wsRef.current, wsRef.current.readyState);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const message = JSON.stringify(data);
       console.log(`Sending to WebSocket: ${message}`);
@@ -128,7 +132,12 @@ export default function App() {
     } else {
       console.warn("WebSocket not connected, reconnecting...");
       _connectWebSocket();
-    }
+    }*/
+
+
+    const message = JSON.stringify(data);
+    console.log(`Sending to WebSocket: ${message}`);
+    wsRef.current.send(message);
   };
 
   const _startLogging = () => {
