@@ -1,0 +1,27 @@
+ (NOBRIDGE) LOG  Sending to WebSocket: {"timestamp":1741317877932,"tilt":{"x":0,"y":0,"z":0},"ballPosition":{"x":0,"y":0},"gyroscope":{"x":0,"y":0,"z":0},"accelerometer":{"x":0,"y":0,"z":0},"updateCounter":0,"sensorStatus":"inactive","lastUpdateTime":0}
+ (NOBRIDGE) LOG  WebSocket message received: {"message": "Data received and stored"}
+ (NOBRIDGE) LOG  {
+  "timestamp": 1741317878948,
+  "tilt": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "ballPosition": {
+    "x": 0,
+    "y": 0
+  },
+  "gyroscope": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "accelerometer": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "updateCounter": 0,
+  "sensorStatus": "inactive",
+  "lastUpdateTime": 0
+}
