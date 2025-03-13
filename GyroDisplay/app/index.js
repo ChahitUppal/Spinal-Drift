@@ -8,7 +8,7 @@ const BALL_RADIUS = 15;
 
 // WebSocket connection constants
 const WS_HOST = "personal-site-oi5a.onrender.com";
-const IMU_ID = "nick2"; // You can use this IMU ID on the server
+const IMU_ID = "nick3"; // You can use this IMU ID on the server
 
 export default function App() {
   // Logging interval in milliseconds (can be changed)
