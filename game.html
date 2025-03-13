@@ -13,6 +13,21 @@
       font-size: 24px;
       z-index: 1;
     }
+    #wsMessage {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: white;
+      font-size: 16px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 5px 10px;
+      z-index: 1;
+      max-width: 80%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     #gameOver {
       position: absolute;
       top: 50%;
@@ -32,11 +47,6 @@
       padding: 10px;
       z-index: 1;
     }
-    #output {
-      max-height: 100px;
-      overflow-y: scroll;
-      font-size: 12px;
-    }
     #startGameBtn {
       position: absolute;
       bottom: 20px;
@@ -53,6 +63,8 @@
 <body>
   <!-- Score display -->
   <div id="score">Score: 0</div>
+  <!-- Most recent WebSocket message display -->
+  <div id="wsMessage">Latest Message: </div>
   <!-- Game Over message -->
   <div id="gameOver">Game Over</div>
   <!-- IMU connection panel -->
@@ -60,7 +72,6 @@
     <label for="imuIdInput">Enter IMU ID:</label>
     <input type="text" id="imuIdInput" placeholder="e.g., my_imu_id" />
     <button id="connectBtn">Connect</button>
-    <pre id="output"></pre>
   </div>
   <!-- Start Game button -->
   <button id="startGameBtn">Start Game</button>
@@ -226,12 +237,13 @@
 
       socket.onopen = function(event) {
         console.log("Connected to:", wsUrl);
-        appendOutput(`Connected to: ${wsUrl}`);
+        document.getElementById("wsMessage").textContent = "Connected to: " + wsUrl;
       };
 
       socket.onmessage = function(event) {
         console.log("Message from server:", event.data);
-        appendOutput(event.data);
+        // Update the most recent message display (only the latest message is shown)
+        document.getElementById("wsMessage").textContent = event.data;
 
         try {
           const msg = JSON.parse(event.data);
@@ -246,20 +258,14 @@
 
       socket.onclose = function(event) {
         console.log("Disconnected from server");
-        appendOutput("Disconnected from server");
+        document.getElementById("wsMessage").textContent = "Disconnected from server";
       };
 
       socket.onerror = function(error) {
         console.error("WebSocket error:", error);
-        appendOutput("WebSocket error. Check the console for details.");
+        document.getElementById("wsMessage").textContent = "WebSocket error. Check the console for details.";
       };
     });
-
-    // Helper function to append messages to the output element
-    function appendOutput(message) {
-      const outputElem = document.getElementById("output");
-      outputElem.textContent += message + "\n";
-    }
 
     // ----------------------
     // Start Game on Button Click (after ensuring an IMU ID is provided)
