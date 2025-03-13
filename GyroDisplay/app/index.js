@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput } from "react-native";
-import { Gyroscope } from "expo-sensors";
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from "react-native";
+import { DeviceMotion } from "expo-sensors";
 
 const { width } = Dimensions.get("window");
 const CIRCLE_RADIUS = width * 0.35;
@@ -14,7 +14,7 @@ export default function App() {
   // Logging interval in milliseconds (can be changed)
   const [loggingInterval, setLoggingInterval] = useState(50);
   
-  // Accumulated tilt values that persist
+  // Current tilt values (no accumulation with previous values)
   const [tilt, setTilt] = useState({ x: 0, y: 0, z: 0 });
   
   // Position values for the ball
@@ -92,9 +92,6 @@ export default function App() {
       wsRef.current.onclose = () => {
         console.log("WebSocket connection closed");
         setDebugValues(prev => ({...prev, wsConnected: false}));
-        
-        // Attempt to reconnect after 5 seconds
-        //setTimeout(_connectWebSocket, 0);
       };
       
       wsRef.current.onerror = (error) => {
@@ -122,21 +119,18 @@ export default function App() {
   
   // Function to send data to WebSocket
   const _sendDataToWebSocket = (data) => {
-
-    // COMMENTING THIS STUFF OUT FIXES IT
-    /*console.log(wsRef.current, wsRef.current.readyState);
+    // Note: If reconnection logic is desired, you can uncomment and adjust accordingly
+    /*
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const message = JSON.stringify(data);
-      console.log(`Sending to WebSocket: ${message}`);
       wsRef.current.send(message);
     } else {
       console.warn("WebSocket not connected, reconnecting...");
       _connectWebSocket();
-    }*/
-
-
+    }
+    */
+    
     const message = JSON.stringify(data);
-    console.log(`Sending to WebSocket: ${message}`);
     wsRef.current.send(message);
   };
 
@@ -151,11 +145,6 @@ export default function App() {
       // Use the latest values from ref to log the most recent data
       const currentTilt = latestValuesRef.current.tilt;
       const currentPosition = latestValuesRef.current.position;
-      
-      // First add debug prints to see if we're getting updates
-      // console.log(`DEBUG - Raw tilt: X:${currentTilt.x.toFixed(2)}, Y:${currentTilt.y.toFixed(2)}, Z:${currentTilt.z.toFixed(2)}`);
-      // console.log(`DEBUG - Ball position: X:${currentPosition.x.toFixed(2)}, Y:${currentPosition.y.toFixed(2)}`);
-      // console.log(`DEBUG - Update counter: ${updateCounterRef.current}`);
       
       const logData = {
         timestamp: Date.now(),
@@ -183,9 +172,6 @@ export default function App() {
         lastUpdateTime: debugValues.lastUpdate
       };
       
-      console.log(JSON.stringify(logData, null, 2));
-      
-      // Send data to WebSocket server
       _sendDataToWebSocket(logData);
       
     }, loggingInterval);
@@ -199,84 +185,67 @@ export default function App() {
   };
 
   const _subscribeToSensors = () => {
-    console.log("Attempting to subscribe to gyroscope");
-    
-    // Configure sensor update interval
-    Gyroscope.setUpdateInterval(100);
+    console.log("Attempting to subscribe to DeviceMotion");
 
-    // Subscribe to gyroscope
-    const gyroSubscription = Gyroscope.addListener(data => {
-      // Update debug values to track sensor activity
+    // Set update interval (in ms)
+    DeviceMotion.setUpdateInterval(100);
+
+    // Subscribe to DeviceMotion (gives absolute tilt angles)
+    const motionSubscription = DeviceMotion.addListener(({ rotation }) => {
+      if (!rotation) return; // Handle cases where data isn't available
+
       setDebugValues(prev => ({
         ...prev,
         gyroActive: true,
-        lastUpdate: Date.now()
+        lastUpdate: Date.now(),
       }));
-      
-      // Increment update counter to track activity
+
       updateCounterRef.current += 1;
-      
-      // Store raw data for debugging
-      // console.log(`Gyro update: X:${data.x.toFixed(2)}, Y:${data.y.toFixed(2)}, Z:${data.z.toFixed(2)}`);
-      
-      // Accumulate the tilt - this creates the persistent tilt effect
-      setTilt(prevTilt => {
-        // Apply a damping factor to avoid excessive values
-        const dampingFactor = 0.05;
-        const newX = prevTilt.x + (data.x * dampingFactor);
-        const newY = prevTilt.y + (data.y * dampingFactor);
-        const newZ = prevTilt.z + (data.z * dampingFactor);
-        
-        // Limit maximum tilt values to avoid excessive movement
-        const maxTilt = 1.5;
-        const clampedX = Math.max(Math.min(newX, maxTilt), -maxTilt);
-        const clampedY = Math.max(Math.min(newY, maxTilt), -maxTilt);
-        const clampedZ = Math.max(Math.min(newZ, maxTilt), -maxTilt);
-        
-        const result = {
-          x: parseFloat(clampedX.toFixed(2)),
-          y: parseFloat(clampedY.toFixed(2)),
-          z: parseFloat(clampedZ.toFixed(2))
-        };
-        
-        // Calculate new ball position based on tilt - FIXED: Swapped x and y orientation
-        const scaleFactor = CIRCLE_RADIUS * 0.65; // Reduced to ensure ball stays within circle
-        const rawX = result.y * scaleFactor; 
-        const rawY = -result.x * scaleFactor; 
-        
-        // Ensure ball stays within the circle boundaries
-        const distance = Math.sqrt(rawX * rawX + rawY * rawY);
-        const maxDistance = CIRCLE_RADIUS - BALL_RADIUS;
-        
-        let newBallX = rawX;
-        let newBallY = rawY;
-        
-        if (distance > maxDistance) {
-          const ratio = maxDistance / distance;
-          newBallX *= ratio;
-          newBallY *= ratio;
-        }
-        
-        setPosition({
-          x: newBallX,
-          y: newBallY
-        });
-        
-        return result;
+
+      // Get absolute rotation values in radians
+      const { alpha, beta, gamma } = rotation; 
+      // alpha = yaw (around z-axis)
+      // beta = pitch (tilt forward/backward)
+      // gamma = roll (tilt side to side)
+
+      // Convert radians to degrees
+      const tiltX = beta;
+      const tiltY = gamma;
+      const tiltZ = alpha;
+
+      setTilt({
+        x: parseFloat(tiltX.toFixed(2)),
+        y: parseFloat(tiltY.toFixed(2)),
+        z: parseFloat(tiltZ.toFixed(2)),
       });
+
+      // Convert tilt angles to ball position
+      const scaleFactor = CIRCLE_RADIUS * 0.65;
+      let rawX = tiltY * scaleFactor;
+      let rawY = -tiltX * scaleFactor;
+
+      // Ensure ball stays within the circle
+      const distance = Math.sqrt(rawX * rawX + rawY * rawY);
+      const maxDistance = CIRCLE_RADIUS - BALL_RADIUS;
+
+      if (distance > maxDistance) {
+        const ratio = maxDistance / distance;
+        rawX *= ratio;
+        rawY *= ratio;
+      }
+
+      setPosition({ x: rawX, y: rawY });
     });
 
-    if (gyroSubscription) {
-      console.log("Successfully subscribed to gyroscope");
-      setSubscription(gyroSubscription);
+    if (motionSubscription) {
+      console.log("Successfully subscribed to DeviceMotion");
+      setSubscription(motionSubscription);
     } else {
-      console.error("Failed to subscribe to gyroscope");
-      setDebugValues(prev => ({
-        ...prev,
-        gyroActive: false
-      }));
+      console.error("Failed to subscribe to DeviceMotion");
+      setDebugValues(prev => ({ ...prev, gyroActive: false }));
     }
   };
+
 
   const _unsubscribeFromSensors = () => {
     console.log("Unsubscribing from sensors");
@@ -308,7 +277,7 @@ export default function App() {
     
     let description = [];
     
-    // Updated to properly indicate forward/backward based on fixed x-orientation
+    // Properly indicate forward/backward based on x-orientation
     if (tilt.x < -0.1) description.push("Backward");
     else if (tilt.x > 0.1) description.push("Forward");
     
