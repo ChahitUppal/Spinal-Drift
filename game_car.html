@@ -128,6 +128,9 @@
     // Because the car is about 1 wide, let's define a margin so they don't go off the road
     const sideMargin = 1.0;
 
+    // New lookahead distance for spawning chunks earlier
+    const spawnDistance = 400;
+
     // ----------------------
     // Create a simple cartoon car for the player, oriented along +Z
     // ----------------------
@@ -434,7 +437,7 @@
       camera.lookAt(player.position.x, player.position.y, player.position.z);
 
       // If we're approaching the end of the current chunk, spawn another
-      if (player.position.z + 50 > spawnZ) {
+      if (player.position.z + spawnDistance > spawnZ) {
         spawnChunk(spawnZ);
       }
 
