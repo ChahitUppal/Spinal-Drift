@@ -121,7 +121,7 @@
     let scene, camera, renderer;
     let player;                // The player's car (Group object)
     let obstacles = [];        // Array of obstacle (parked) cars
-    let roadSegments = [];     // Array of road plane segments (including decorative lines)
+    let roadSegments = [];     // Array of road segments, water, bridges, and lines
     let gameOver = false;
     let score = 0;
     let highScore = 0;         // Track the user's best score across attempts
@@ -134,9 +134,9 @@
 
     // Infinite spawning logic
     let spawnZ = 0;            // How far we've spawned obstacles/road
-    const chunkSize = 200;     // Distance for each chunk of road + obstacles
+    const chunkSize = 50;     // Distance for each chunk of road + obstacles
     const obstacleSpacing = 20;
-    const roadWidth = 20;      // We'll make it narrower so lines are visible near the edges
+    const roadWidth = 20;      // Overall road width
 
     // For obstacle spacing logic
     const minCarSeparation = 2.0; 
@@ -144,6 +144,9 @@
 
     // Lookahead distance for spawning chunks earlier
     const spawnDistance = 400;
+
+    // Global flag to ensure no two consecutive bridge segments.
+    let lastSegmentBridge = false;
 
     // ----------------------
     // Create a simple cartoon car for the player, oriented along +Z
@@ -245,22 +248,40 @@
       gameOver = false;
       document.getElementById("gameOver").style.display = "none";
       document.getElementById("restartGameBtn").style.display = "none";
+      // Reset the last segment flag on game start.
+      lastSegmentBridge = false;
       spawnChunk(spawnZ);
       window.addEventListener('resize', onWindowResize, false);
       animate();
     }
 
     // ----------------------
-    // Spawn a chunk of road and obstacles
+    // Spawn a chunk of road and obstacles or a bridge segment.
+    // First segment is always a road and never two bridges in a row.
     // ----------------------
     function spawnChunk(zStart) {
-      spawnRoadSegment(zStart);
-      spawnRoadLines(zStart);
-      spawnObstacles(zStart);
+      if (zStart === 0 || lastSegmentBridge) {
+        // Always spawn a road segment if this is the first chunk or the last was a bridge.
+        spawnRoadSegment(zStart);
+        spawnRoadLines(zStart);
+        spawnObstacles(zStart);
+        lastSegmentBridge = false;
+      } else {
+        // Otherwise, 20% chance to spawn a bridge segment.
+        if (Math.random() < 0.2) {
+          spawnBridgeSegment(zStart);
+          lastSegmentBridge = true;
+        } else {
+          spawnRoadSegment(zStart);
+          spawnRoadLines(zStart);
+          spawnObstacles(zStart);
+          lastSegmentBridge = false;
+        }
+      }
       spawnZ += chunkSize;
     }
 
-    // Create a road segment (dark gray plane)
+    // Create a normal road segment (dark gray plane)
     function spawnRoadSegment(zStart) {
       const geometry = new THREE.PlaneGeometry(roadWidth, chunkSize);
       const material = new THREE.MeshPhongMaterial({ color: 0x444444 });
@@ -298,7 +319,7 @@
       roadSegments.push(rightLine);
     }
 
-    // Generate obstacles within this chunk
+    // Generate obstacles within this chunk (only on normal road segments)
     function spawnObstacles(zStart) {
       const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff, 0xffffff, 0xffa500];
       for (let z = zStart + obstacleSpacing; z < zStart + chunkSize; z += obstacleSpacing) {
@@ -334,6 +355,41 @@
       }
     }
 
+    // Create a bridge segment over water.
+    // The bridge is narrow and spawns at a random horizontal location.
+    function spawnBridgeSegment(zStart) {
+      // Spawn water: a blue plane covering a wider area than the road.
+      const waterGeometry = new THREE.PlaneGeometry(roadWidth * 2, chunkSize);
+      const waterMaterial = new THREE.MeshPhongMaterial({ color: 0x1e90ff });
+      const waterPlane = new THREE.Mesh(waterGeometry, waterMaterial);
+      waterPlane.rotation.x = -Math.PI / 2;
+      waterPlane.position.z = zStart + chunkSize / 2;
+      waterPlane.position.y = -0.1; // Slightly below the bridge
+      scene.add(waterPlane);
+      roadSegments.push(waterPlane);
+      
+      // Define the bridge: a narrow road
+      const bridgeWidth = roadWidth / 5; // Narrower than the road
+      // Choose a random horizontal center such that the entire bridge fits within the overall road width.
+      const minX = -roadWidth/2 + bridgeWidth/2;
+      const maxX = roadWidth/2 - bridgeWidth/2;
+      const bridgeCenterX = Math.random() * (maxX - minX) + minX;
+      
+      const bridgeGeometry = new THREE.PlaneGeometry(bridgeWidth, chunkSize);
+      // Change bridge color to brown.
+      const bridgeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+      const bridge = new THREE.Mesh(bridgeGeometry, bridgeMaterial);
+      bridge.rotation.x = -Math.PI / 2;
+      bridge.position.set(bridgeCenterX, 0.01, zStart + chunkSize / 2);
+      scene.add(bridge);
+      roadSegments.push(bridge);
+      
+      // Mark this segment as a bridge so we can check if the player stays on it.
+      bridge.userData.isBridge = true;
+      bridge.userData.bridgeXMin = bridgeCenterX - bridgeWidth/2;
+      bridge.userData.bridgeXMax = bridgeCenterX + bridgeWidth/2;
+    }
+
     // Adjust camera and renderer on window resize
     function onWindowResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -341,7 +397,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    // Check for collisions using bounding boxes
+    // Check for collisions with obstacles
     function checkCollisions() {
       const playerBox = new THREE.Box3().setFromObject(player);
       for (let obs of obstacles) {
@@ -374,11 +430,28 @@
       player.position.z += playerSpeed;
       const tiltInDegrees = currentTilt.x * (180 / Math.PI);
       player.position.x += tiltInDegrees * lateralSpeedFactor;
+      // Clamp within the overall road boundaries.
       if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
       if (player.position.x > roadWidth / 2)  player.position.x = roadWidth / 2;
+      
       camera.position.z = player.position.z - 10;
       camera.position.x = player.position.x;
       camera.lookAt(player.position.x, player.position.y, player.position.z);
+      
+      // If player is in a bridge segment, ensure they stay within the bridge boundaries.
+      for (let seg of roadSegments) {
+        if (seg.userData.isBridge) {
+          let segZCenter = seg.position.z;
+          // Check if the player's z is within this bridge segment's range.
+          if (player.position.z > segZCenter - chunkSize/2 && player.position.z < segZCenter + chunkSize/2) {
+            if (player.position.x < seg.userData.bridgeXMin || player.position.x > seg.userData.bridgeXMax) {
+              endGame();
+              break;
+            }
+          }
+        }
+      }
+      
       if (player.position.z + spawnDistance > spawnZ) {
         spawnChunk(spawnZ);
       }
