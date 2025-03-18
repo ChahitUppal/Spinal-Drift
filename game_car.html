@@ -7,9 +7,9 @@
     body { margin: 0; overflow: hidden; }
     #score {
       position: absolute;
-      top: 10px;
+      top: 20px;
       left: 10px;
-      color: white;
+      color: rgb(255, 255, 255);
       font-size: 24px;
       z-index: 1;
     }
@@ -38,11 +38,14 @@
     }
     #gameOver {
       position: absolute;
+      color: rgb(0, 0, 0);
+      font-size: 40px;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      color: red;
-      font-size: 48px;
+      /* remove or override any color/font-size here 
+        so we can control it dynamically in JS */
+      text-align: center;   /* ensure content is centered horizontally */
       display: none;
       z-index: 1;
     }
@@ -88,6 +91,7 @@
       z-index: 1;
       display: none; /* Shown only when game is over */
     }
+    
   </style>
   <!-- Include three.js from CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -115,9 +119,9 @@
   "></div>
   <div id="stopwatch" style="
   position: absolute;
-  top: 70px; left: 10px;  /* below the highScore which is top=40px */
-  color: white;
-  font-size: 24px;
+  top: 0px; left: 10px;
+  color: rgb(0, 0, 0);
+  font-size: 20px;
   z-index: 10;
   ">
   Time: 0:00
@@ -141,6 +145,16 @@
   <!-- Restart Game button -->
   <button id="restartGameBtn">Restart</button>
   
+  <div id="timePanel" style="position: absolute; top: 50px; right: 10px; background: rgba(0,0,0,0.5); color: white; padding: 10px; z-index: 1;">
+    <label for="gameTimeSelect">Select Game Duration:</label>
+    <select id="gameTimeSelect">
+      <option value="30000">30 Seconds</option>
+      <option value="60000">1 Minute</option>
+      <option value="120000">2 Minutes</option>
+      <option value="180000">3 Minutes</option>
+    </select>
+  </div>
+
   <script>
     // ----------------------
     // Three.js Game Variables
@@ -361,7 +375,7 @@
 
     function rewindPlayerBehindBridge(seg) {
       // E.g. move the player 5 units behind the start of this bridge
-      const behindDist = 5; // how many “seconds” or distance behind
+      const behindDist = 15; // how many “seconds” or distance behind
       let behindZ = seg.userData.zStart - behindDist;
       if (behindZ < 0) behindZ = 0; // clamp so it won't go negative if near start
 
@@ -431,6 +445,9 @@
       lastSegmentBridge = false;
       spawnChunk(spawnZ);
       window.addEventListener('resize', onWindowResize, false);
+      const timeSelect = document.getElementById("gameTimeSelect");
+      const chosenMs = parseInt(timeSelect.value, 10);
+      gameDuration = chosenMs;   // e.g. 30000, 60000, 120000, etc.
       gameStartTime = performance.now();
       animate();
     }
@@ -462,39 +479,6 @@
           el.style.opacity = opacity;
         }
       }, 50);
-    }
-
-    function fallOffBridgeAndRespawn() {
-      // Subtract points if you want:
-      score -= 20;
-      showPenaltyAboveCar("-20");    // if you have that logic
-      updateScore();
-
-      // Animate downward:
-      let dropStartY = player.position.y;
-      let dropDuration = 1000; // 1s
-      let startTime = performance.now();
-
-      let dropInterval = setInterval(() => {
-        let elapsed = performance.now() - startTime;
-        if (elapsed > dropDuration) {
-          clearInterval(dropInterval);
-          // Now re-position the car at the start of the bridge center
-          // We'll figure out which bridge was last. Suppose "seg" is known:
-          // For simplicity, let's pick the *last* bridge in roadSegments
-          let lastBridge = roadSegments.find(r => r.userData && r.userData.isBridge);
-          if (lastBridge) {
-            let centerX = lastBridge.userData.bridgeCenterX;
-            let startZ = lastBridge.userData.bridgeStartZ || 0;
-            player.position.set(centerX, 0, startZ);
-          }
-        } else {
-          // fraction 0..1
-          let t = elapsed / dropDuration;
-          // We can drop from y=0 to y=-5 for instance
-          player.position.y = dropStartY - (5 * t);
-        }
-      }, 30);
     }
 
     function animateCrash(object) {
@@ -547,7 +531,7 @@
     // ----------------------
     function updateScore() {
       score = Math.floor(player.position.z);
-      effectiveScore = baseDistance - penalty;
+      effectiveScore = score - penalty;
       document.getElementById("score").textContent = "Score: " + effectiveScore;
     }
     
@@ -580,18 +564,25 @@
     // End the game
     // ----------------------
     function endGame() {
-      console.log("Game Over")
+
       gameOver = true;
       cancelAnimationFrame(animationId);
-      updateHighScore();
+      updateHighScore(); 
 
-      // e.g. "Game Over – Final Score: 123"
-      let finalText = "Game Over - Final Score: " + score;
-      document.getElementById("gameOver").textContent = finalText;
+      const gameOverEl = document.getElementById("gameOver");
+      gameOverEl.innerHTML = `
+        <div style="font-weight: bold; font-size: 64px;">
+          GAME OVER
+        </div>
+        <div style="color: white; font-size: 24px; margin-top: 10px;">
+          Final Score: ${effectiveScore}
+        </div>
+      `;
 
-      document.getElementById("gameOver").style.display = "block";
+      gameOverEl.style.display = "block";
       document.getElementById("restartGameBtn").style.display = "block";
     }
+
 
     // ----------------------
     // Restart the game with a countdown
@@ -605,6 +596,12 @@
       scene.remove(player);
       obstacles = [];
       roadSegments = [];
+      baseDistance = 0;
+      penalty = 0;
+      score = 0; 
+      effectiveScore = 0;
+      // Also if you have effectiveScore or other scoring variables, set them to 0
+
       // Hide game over UI and trigger countdown before re‑initializing
       document.getElementById("gameOver").style.display = "none";
       document.getElementById("restartGameBtn").style.display = "none";
@@ -637,9 +634,9 @@
             if (player.position.x < seg.userData.bridgeXMin || player.position.x > seg.userData.bridgeXMax) {
               // Car is out of X range
               if (!bridgePenaltyActive) {
-                penalty += 20;
-                showScorePenalty("-20");
                 // Instead of falling animation, just reset position a few seconds behind
+                penalty += 10;            // or score -= 20, if you do it that way
+                showScorePenalty("-20");  // similar to how you do "-10"
                 rewindPlayerBehindBridge(seg);
                 updateScore();
                 bridgePenaltyActive = true;
