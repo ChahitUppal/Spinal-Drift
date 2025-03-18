@@ -127,8 +127,15 @@
     let highScore = 0;         // Track the user's best score across attempts
 
     // Movement / World logic
-    const playerSpeed = 0.2;         // Constant forward movement speed
+
+    const basePlayerSpeed = 0.2; // Base forward movement speed
+    var playerSpeed = basePlayerSpeed;      
+    var speedPercent = 0.0;
     const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
+
+    const forwardTiltLowerBound = 10.0 // Values less than this will cause the car to move forward at full speed
+    const forwardTiltUpperBound = 20.0 // Values higher than this will cause the cars movement to stop
+
     let currentTilt = { x: 0, y: 0, z: 0 }; // Latest IMU tilt values (in radians)
     let animationId; // To store the requestAnimationFrame ID
 
@@ -606,9 +613,24 @@
       animationId = requestAnimationFrame(animate);
 
       // Move player
+      
+      const forwardTiltInDegrees = currentTilt.y * (180 / Math.PI);
+
+      if (forwardTiltInDegrees <= forwardTiltLowerBound) {
+        speedPercent = 1.0
+      } else if (forwardTiltInDegrees > forwardTiltUpperBound) {
+        speedPercent = 0.0
+      } else {
+        const currDifference = -(forwardTiltInDegrees - forwardTiltUpperBound)
+        speedPercent = currDifference / (forwardTiltUpperBound - forwardTiltLowerBound)
+      }
+
+      playerSpeed = basePlayerSpeed * speedPercent;
+
       player.position.z += playerSpeed;
+
       const tiltInDegrees = currentTilt.x * (180 / Math.PI);
-      player.position.x += tiltInDegrees * lateralSpeedFactor;
+      player.position.x += tiltInDegrees * lateralSpeedFactor * speedPercent;
 
       // 1) First, let the camera follow the player
       camera.position.z = player.position.z - 10;
