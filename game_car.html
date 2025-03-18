@@ -216,7 +216,7 @@
     // Each segment type defines a default length and a spawn() method that creates its objects.
     // ----------------------
     const segmentTypes = {
-      road: {
+      straightRoad: {
         length: 50, // Default road segment length.
         spawn: function(zStart, length) {
           // Spawn the road surface.
@@ -225,6 +225,11 @@
           const road = new THREE.Mesh(geometry, material);
           road.rotation.x = -Math.PI / 2;
           road.position.z = zStart + length / 2;
+          road.userData = {
+            segmentType: "straightRoad",
+            zStart: zStart,
+            zEnd: zStart + length,
+          }
           scene.add(road);
           roadSegments.push(road);
 
@@ -288,8 +293,151 @@
               }
             }
           }
+        },
+        handleCollisions(data) {
+          if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
+          if (player.position.x >  roadWidth / 2) player.position.x =  roadWidth / 2;
         }
       },
+      curvedRoad: {
+        length: 100,
+        spawn: function(zStart, length) {
+          const wavePeriod = 1;
+          const waveWidth = 1;
+          const numPoints = 50;
+
+          // Arrays to hold the left, right, and middle curve points
+          const leftCurvePoints = [];
+          const rightCurvePoints = [];
+          const middleCurvePoints = [];
+
+          for (let i = 0; i < numPoints; i++) {
+            const t = i / (numPoints - 1);
+            const z = zStart + t * length;
+            const offsetX = (waveWidth * roadWidth * 0.5) * Math.sin(t * wavePeriod * 2 * Math.PI) 
+                            - (waveWidth * roadWidth * 0.5);
+            const y = 0.02;
+
+            // Left edge
+            leftCurvePoints.push(new THREE.Vector3(offsetX, y, z));
+            // Right edge
+            rightCurvePoints.push(new THREE.Vector3(offsetX + roadWidth, y, z));
+            // Middle (for the dashed line)
+            middleCurvePoints.push(new THREE.Vector3(offsetX + roadWidth * 0.5, y, z));
+          }
+
+          // ---------------------------------------------------
+          // 1) Create a grey mesh that fills between left & right
+          // ---------------------------------------------------
+          // We'll create a triangle strip between leftCurvePoints and rightCurvePoints
+
+          const roadGeometry = new THREE.BufferGeometry();
+          const positions = [];
+
+          // Build triangles between adjacent pairs
+          for (let i = 0; i < numPoints - 1; i++) {
+            const pA = leftCurvePoints[i];
+            const pB = rightCurvePoints[i];
+            const pC = leftCurvePoints[i+1];
+            const pD = rightCurvePoints[i+1];
+
+            // Triangle 1: pA -> pB -> pC
+            positions.push(pA.x, pA.y, pA.z);
+            positions.push(pB.x, pB.y, pB.z);
+            positions.push(pC.x, pC.y, pC.z);
+
+            // Triangle 2: pB -> pD -> pC
+            positions.push(pB.x, pB.y, pB.z);
+            positions.push(pD.x, pD.y, pD.z);
+            positions.push(pC.x, pC.y, pC.z);
+          }
+
+          const positionAttribute = new THREE.Float32BufferAttribute(positions, 3);
+          roadGeometry.setAttribute('position', positionAttribute);
+
+          // Basic grey material
+          const roadMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x808080, // grey
+            side: THREE.DoubleSide 
+          });
+          const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+
+          // ---------------------------------------------------
+          // 2) Create dashed lines for left, right, and center
+          // ---------------------------------------------------
+          const leftGeometry = new THREE.BufferGeometry().setFromPoints(leftCurvePoints);
+          const rightGeometry = new THREE.BufferGeometry().setFromPoints(rightCurvePoints);
+          const middleGeometry = new THREE.BufferGeometry().setFromPoints(middleCurvePoints);
+
+          // Use LineDashedMaterial for dashed lines
+          const dashedMaterial = new THREE.LineDashedMaterial({
+            color: 0xffff00,
+            dashSize: 2,    // length of each dash
+            gapSize: 1      // length of gap between dashes
+          });
+
+          const leftLine = new THREE.Line(leftGeometry, dashedMaterial);
+          const rightLine = new THREE.Line(rightGeometry, dashedMaterial);
+
+          // For the center line, you might want a white dashed line
+          const centerDashedMaterial = new THREE.LineDashedMaterial({
+            color: 0xffffff,
+            dashSize: 2,
+            gapSize: 1
+          });
+          const middleLine = new THREE.Line(middleGeometry, centerDashedMaterial);
+
+          // Important: computeLineDistances() for dashed lines
+          leftLine.computeLineDistances();
+          rightLine.computeLineDistances();
+          middleLine.computeLineDistances();
+
+          // Attach userData so we can clamp X properly in animate()
+          [leftLine, rightLine, middleLine].forEach(line => {
+            line.userData = {
+              segmentType: 'curvedRoad',
+              zStart: zStart,
+              zEnd: zStart + length,
+              wavePeriod: wavePeriod,
+              waveWidth: waveWidth,
+              segmentLength: length
+            };
+          });
+
+          // ---------------------------------------------------
+          // Add everything to the scene in your preferred order
+          // (Usually add mesh first, then lines on top)
+          // ---------------------------------------------------
+          scene.add(roadMesh);
+          scene.add(leftLine);
+          scene.add(rightLine);
+          scene.add(middleLine);
+
+          // Track your road segments if needed
+          roadSegments.push(leftLine);
+          roadSegments.push(rightLine);
+          roadSegments.push(middleLine);
+        },
+        handleCollisions(data) {
+          // Figure out param t for how far along the curve we are
+          const segLength = data.segmentLength;
+          const t = (player.position.z - data.zStart) / segLength;
+
+          // The center X of the sine wave at this t
+          const centerX =
+            (data.waveWidth * roadWidth * 0.5)
+            * Math.sin(t * data.wavePeriod * 2 * Math.PI);
+
+          // Then clamp the player so that they stay within ±roadWidth/2 around centerX
+          const minX = centerX - (roadWidth / 2);
+          const maxX = centerX + (roadWidth / 2);
+
+          if (player.position.x < minX) player.position.x = minX;
+          if (player.position.x > maxX) player.position.x = maxX;
+        }
+      },
+
+
       bridge: {
         length: 40, // Default bridge segment length.
         spawn: function(zStart, length) {
@@ -314,14 +462,26 @@
           const bridge = new THREE.Mesh(bridgeGeometry, bridgeMaterial);
           bridge.rotation.x = -Math.PI / 2;
           bridge.position.set(bridgeCenterX, 0.01, zStart + length / 2);
+          
           scene.add(bridge);
           roadSegments.push(bridge);
           
           // Store bridge boundaries and segment length in userData.
+          bridge.userData.segmentType = "bridge";
           bridge.userData.isBridge = true;
           bridge.userData.bridgeXMin = bridgeCenterX - bridgeWidth/2;
           bridge.userData.bridgeXMax = bridgeCenterX + bridgeWidth/2;
           bridge.userData.segmentLength = length;
+          bridge.userData.zStart = zStart;
+          bridge.userData.zEnd = zStart + length;
+        },
+        handleCollisions: function(data) {
+          let segLength = data.segmentLength || segmentTypes.bridge.length;
+          // If within Z-bounds, also check X-bounds
+          if (player.position.x < data.bridgeXMin || player.position.x > data.bridgeXMax) {
+            endGame();
+            return;
+          }
         }
       }
     };
@@ -334,10 +494,18 @@
       let segmentType;
       // First segment is always road; also prevent consecutive bridges.
       if (zStart === 0 || lastSegmentBridge) {
-        segmentType = "road";
+        segmentType = "straightRoad";
       } else {
-        // 20% chance to spawn a bridge segment.
-        segmentType = (Math.random() < 0.2) ? "bridge" : "road";
+        const rand = Math.random();
+        if (rand < 0.2) {
+          segmentType = "bridge";
+        } else if (rand < 0.5) {
+          // This 0.5 cutoff means 20% for bridge (above) 
+          // + 30% for curvedRoad (the difference between 0.5 and 0.2).
+          segmentType = "curvedRoad";
+        } else {
+          segmentType = "straightRoad";
+        }
       }
       // Allow random variation in segment length (between 80% and 120% of default).
       let baseLength = segmentTypes[segmentType].length;
@@ -436,39 +604,45 @@
     function animate() {
       if (gameOver) return;
       animationId = requestAnimationFrame(animate);
+
+      // Move player
       player.position.z += playerSpeed;
       const tiltInDegrees = currentTilt.x * (180 / Math.PI);
       player.position.x += tiltInDegrees * lateralSpeedFactor;
-      // Clamp within the overall road boundaries.
-      if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
-      if (player.position.x > roadWidth / 2)  player.position.x = roadWidth / 2;
-      
+
+      // 1) First, let the camera follow the player
       camera.position.z = player.position.z - 10;
       camera.position.x = player.position.x;
       camera.lookAt(player.position.x, player.position.y, player.position.z);
       
-      // If player is in a bridge segment, ensure they stay within its horizontal boundaries.
+      // 2) Check for special segments (bridge, curvedRoad, etc.)
       for (let seg of roadSegments) {
-        if (seg.userData.isBridge) {
-          let segLength = seg.userData.segmentLength || segmentTypes.bridge.length;
-          if (player.position.z > seg.position.z - segLength/2 && player.position.z < seg.position.z + segLength/2) {
-            if (player.position.x < seg.userData.bridgeXMin || player.position.x > seg.userData.bridgeXMax) {
-              endGame();
-              break;
-            }
-          }
+        const data = seg.userData;
+        if (!data) continue;
+        
+        // If the player is within the z-range of this segment...
+        if (player.position.z >= data.zStart && player.position.z <= data.zEnd) {
+          segmentTypes[data.segmentType].handleCollisions(data);
         }
       }
+
       
+
+      // 4) Spawn more road if needed
       if (player.position.z + spawnDistance > spawnZ) {
         spawnChunk(spawnZ);
       }
+
+      // 5) Check collisions
       if (checkCollisions()) {
         endGame();
       }
+
+      // 6) Update score and render
       updateScore();
       renderer.render(scene, camera);
     }
+
 
     // ----------------------
     // End the game
@@ -543,7 +717,6 @@
         document.getElementById("wsMessage").textContent = "Connected to: " + wsUrl;
       };
       socket.onmessage = function(event) {
-        console.log("Message from server:", event.data);
         document.getElementById("wsMessage").textContent = event.data;
         try {
           const msg = JSON.parse(event.data);
