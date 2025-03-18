@@ -95,6 +95,33 @@
 <body>
   <!-- Score display -->
   <div id="score">Score: 0</div>
+  <div id="scoreChange" style="
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: red;
+  font-size: 50px;
+  z-index: 10;
+  display: none;
+  "></div>
+  <div id="penaltyText" style="
+  position: absolute;
+  font-size: 20px;
+  color: red;
+  display: none;   /* hidden by default */
+  z-index: 9999;   /* on top of other UI */
+  pointer-events: none; /* ignore mouse events */
+  "></div>
+  <div id="stopwatch" style="
+  position: absolute;
+  top: 70px; left: 10px;  /* below the highScore which is top=40px */
+  color: white;
+  font-size: 24px;
+  z-index: 10;
+  ">
+  Time: 0:00
+  </div>
   <!-- High score display -->
   <div id="highScore">High Score: 0</div>
   <!-- Most recent WebSocket message display -->
@@ -125,7 +152,12 @@
     let gameOver = false;
     let score = 0;
     let highScore = 0;         // Track the user's best score across attempts
-
+    var effectiveScore = 0;
+    let gameDuration = 5000; // 1 minute = 60,000 ms
+    let gameStartTime = 0;
+    let baseDistance = 0;
+    let penalty = 0;
+    let bridgePenaltyActive = false;
     // Movement / World logic
     const playerSpeed = 0.2;         // Constant forward movement speed
     const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
@@ -315,6 +347,7 @@
           bridge.rotation.x = -Math.PI / 2;
           bridge.position.set(bridgeCenterX, 0.01, zStart + length / 2);
           scene.add(bridge);
+          bridge.userData.zStart = zStart;
           roadSegments.push(bridge);
           
           // Store bridge boundaries and segment length in userData.
@@ -325,6 +358,18 @@
         }
       }
     };
+
+    function rewindPlayerBehindBridge(seg) {
+      // E.g. move the player 5 units behind the start of this bridge
+      const behindDist = 5; // how many “seconds” or distance behind
+      let behindZ = seg.userData.zStart - behindDist;
+      if (behindZ < 0) behindZ = 0; // clamp so it won't go negative if near start
+
+      // Re-center X to the safe region (the middle of the road/bridge)
+      // or you can use seg.userData.bridgeXMin/Max if you want.
+      player.position.x = (seg.userData.bridgeXMin + seg.userData.bridgeXMax)/2;
+      player.position.z = behindZ;
+    }
 
     // ----------------------
     // Unified function to spawn a segment chunk.
@@ -386,9 +431,10 @@
       lastSegmentBridge = false;
       spawnChunk(spawnZ);
       window.addEventListener('resize', onWindowResize, false);
+      gameStartTime = performance.now();
       animate();
     }
-
+    
     // ----------------------
     // Adjust camera and renderer on window resize
     // ----------------------
@@ -398,6 +444,76 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
+    function showScorePenalty(penalty) {
+      const el = document.getElementById("scoreChange");
+      el.textContent = penalty;    // e.g. "-10" or "-20"
+      el.style.display = "block";
+      
+      // optional: fade out over 1 second
+      let startTime = performance.now();
+      let fadeInterval = setInterval(() => {
+        let elapsed = performance.now() - startTime;
+        if (elapsed > 1000) {
+          clearInterval(fadeInterval);
+          el.style.display = "none";
+        } else {
+          // we can gradually reduce opacity if we want
+          let opacity = 1 - (elapsed / 1000);
+          el.style.opacity = opacity;
+        }
+      }, 50);
+    }
+
+    function fallOffBridgeAndRespawn() {
+      // Subtract points if you want:
+      score -= 20;
+      showPenaltyAboveCar("-20");    // if you have that logic
+      updateScore();
+
+      // Animate downward:
+      let dropStartY = player.position.y;
+      let dropDuration = 1000; // 1s
+      let startTime = performance.now();
+
+      let dropInterval = setInterval(() => {
+        let elapsed = performance.now() - startTime;
+        if (elapsed > dropDuration) {
+          clearInterval(dropInterval);
+          // Now re-position the car at the start of the bridge center
+          // We'll figure out which bridge was last. Suppose "seg" is known:
+          // For simplicity, let's pick the *last* bridge in roadSegments
+          let lastBridge = roadSegments.find(r => r.userData && r.userData.isBridge);
+          if (lastBridge) {
+            let centerX = lastBridge.userData.bridgeCenterX;
+            let startZ = lastBridge.userData.bridgeStartZ || 0;
+            player.position.set(centerX, 0, startZ);
+          }
+        } else {
+          // fraction 0..1
+          let t = elapsed / dropDuration;
+          // We can drop from y=0 to y=-5 for instance
+          player.position.y = dropStartY - (5 * t);
+        }
+      }, 30);
+    }
+
+    function animateCrash(object) {
+      const originalPos = object.position.clone();
+      const shakeDuration = 300; // 0.3 sec for a quick shake
+      const startTime = performance.now();
+      let shakeInterval = setInterval(() => {
+        let elapsed = performance.now() - startTime;
+        if (elapsed > shakeDuration) {
+          clearInterval(shakeInterval);
+          object.position.copy(originalPos);
+        } else {
+          // random +/- 0.3 around original x,z
+          object.position.x = originalPos.x + (Math.random() - 0.5) * 0.3;
+          object.position.z = originalPos.z + (Math.random() - 0.5) * 0.3;
+        }
+      }, 30);
+    }
+
     // ----------------------
     // Check for collisions with obstacles
     // ----------------------
@@ -405,78 +521,74 @@
       const playerBox = new THREE.Box3().setFromObject(player);
       for (let obs of obstacles) {
         const obsBox = new THREE.Box3().setFromObject(obs);
-        if (playerBox.intersectsBox(obsBox)) {
-          return true;
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+          const obsBox = new THREE.Box3().setFromObject(obstacles[i]);
+          if (playerBox.intersectsBox(obsBox)) {
+            penalty += 10;  // subtract penalty once
+            showScorePenalty("-10");
+            animateCrash(player);
+            updateScore();
+
+            // Remove obstacle so it won't collide again next frame:
+            scene.remove(obstacles[i]);
+            obstacles.splice(i, 1);
+
+            // optionally break if you only want to register one collision per frame
+            // break;
+          }
         }
       }
       return false;
     }
+
 
     // ----------------------
     // Update score based on player's z position
     // ----------------------
     function updateScore() {
       score = Math.floor(player.position.z);
-      document.getElementById("score").textContent = "Score: " + score;
+      effectiveScore = baseDistance - penalty;
+      document.getElementById("score").textContent = "Score: " + effectiveScore;
+    }
+    
+    function updateStopwatch() {
+      // How many ms have elapsed since gameStartTime
+      let elapsedMs = performance.now() - gameStartTime;
+      // Convert to total seconds
+      let totalSec = Math.floor(elapsedMs / 1000);
+      // Calculate minutes & remainder seconds
+      let minutes = Math.floor(totalSec / 60);
+      let seconds = totalSec % 60;
+
+      // Format "Time: M:SS"
+      let secondsStr = (seconds < 10) ? ("0" + seconds) : seconds;
+      document.getElementById("stopwatch").textContent =
+        "Time: " + minutes + ":" + secondsStr;
     }
 
     // ----------------------
     // Update high score if needed
     // ----------------------
     function updateHighScore() {
-      if (score > highScore) {
-        highScore = score;
+      if (effectiveScore> highScore) {
+        highScore = effectiveScore;
       }
       document.getElementById("highScore").textContent = "High Score: " + highScore;
     }
-
-    // ----------------------
-    // The main animation loop
-    // ----------------------
-    function animate() {
-      if (gameOver) return;
-      animationId = requestAnimationFrame(animate);
-      player.position.z += playerSpeed;
-      const tiltInDegrees = currentTilt.x * (180 / Math.PI);
-      player.position.x += tiltInDegrees * lateralSpeedFactor;
-      // Clamp within the overall road boundaries.
-      if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
-      if (player.position.x > roadWidth / 2)  player.position.x = roadWidth / 2;
-      
-      camera.position.z = player.position.z - 10;
-      camera.position.x = player.position.x;
-      camera.lookAt(player.position.x, player.position.y, player.position.z);
-      
-      // If player is in a bridge segment, ensure they stay within its horizontal boundaries.
-      for (let seg of roadSegments) {
-        if (seg.userData.isBridge) {
-          let segLength = seg.userData.segmentLength || segmentTypes.bridge.length;
-          if (player.position.z > seg.position.z - segLength/2 && player.position.z < seg.position.z + segLength/2) {
-            if (player.position.x < seg.userData.bridgeXMin || player.position.x > seg.userData.bridgeXMax) {
-              endGame();
-              break;
-            }
-          }
-        }
-      }
-      
-      if (player.position.z + spawnDistance > spawnZ) {
-        spawnChunk(spawnZ);
-      }
-      if (checkCollisions()) {
-        endGame();
-      }
-      updateScore();
-      renderer.render(scene, camera);
-    }
-
-    // ----------------------
+    
+        // ----------------------
     // End the game
     // ----------------------
     function endGame() {
+      console.log("Game Over")
       gameOver = true;
       cancelAnimationFrame(animationId);
       updateHighScore();
+
+      // e.g. "Game Over – Final Score: 123"
+      let finalText = "Game Over - Final Score: " + score;
+      document.getElementById("gameOver").textContent = finalText;
+
       document.getElementById("gameOver").style.display = "block";
       document.getElementById("restartGameBtn").style.display = "block";
     }
@@ -498,6 +610,66 @@
       document.getElementById("restartGameBtn").style.display = "none";
       startCountdown(init);
     }
+
+    // ----------------------
+    // The main animation loop
+    // ----------------------
+    function animate() {
+      if (gameOver) return;
+      animationId = requestAnimationFrame(animate);
+      player.position.z += playerSpeed;
+      baseDistance = Math.floor(player.position.z);
+      const tiltInDegrees = currentTilt.x * (180 / Math.PI);
+      player.position.x += tiltInDegrees * lateralSpeedFactor;
+      // Clamp within the overall road boundaries.
+      if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
+      if (player.position.x > roadWidth / 2)  player.position.x = roadWidth / 2;
+      
+      camera.position.z = player.position.z - 10;
+      camera.position.x = player.position.x;
+      camera.lookAt(player.position.x, player.position.y, player.position.z);
+      
+      // If player is in a bridge segment, ensure they stay within its horizontal boundaries.
+      for (let seg of roadSegments) {
+        if (seg.userData.isBridge) {
+          let segLength = seg.userData.segmentLength || segmentTypes.bridge.length;
+          if (player.position.z > seg.position.z - segLength/2 && player.position.z < seg.position.z + segLength/2) {
+            if (player.position.x < seg.userData.bridgeXMin || player.position.x > seg.userData.bridgeXMax) {
+              // Car is out of X range
+              if (!bridgePenaltyActive) {
+                penalty += 20;
+                showScorePenalty("-20");
+                // Instead of falling animation, just reset position a few seconds behind
+                rewindPlayerBehindBridge(seg);
+                updateScore();
+                bridgePenaltyActive = true;
+              } 
+              else {
+                // Car is in X range => reset the flag so next time it goes out, penalty triggers again
+                bridgePenaltyActive = false;
+              }
+            }
+          }
+        }
+      }
+    
+      
+      if (player.position.z + spawnDistance > spawnZ) {
+        spawnChunk(spawnZ);
+      }
+      if (checkCollisions()) {
+        updateScore();
+      }
+      updateScore();
+      updateStopwatch();
+      const elapsed = performance.now() - gameStartTime;
+      if (elapsed >= gameDuration) {
+        endGame();  // This calls your existing endGame() that shows "Game Over"
+        return;
+      }
+      renderer.render(scene, camera);
+    }
+
 
     // ----------------------
     // Countdown function before starting the game
@@ -543,7 +715,6 @@
         document.getElementById("wsMessage").textContent = "Connected to: " + wsUrl;
       };
       socket.onmessage = function(event) {
-        console.log("Message from server:", event.data);
         document.getElementById("wsMessage").textContent = event.data;
         try {
           const msg = JSON.parse(event.data);
