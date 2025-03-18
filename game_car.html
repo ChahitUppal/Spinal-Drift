@@ -584,6 +584,18 @@
     document.getElementById("restartGameBtn").addEventListener("click", function() {
       restartGame();
     });
+    
+    // ----------------------
+    // Automatically connect if "id" query parameter is present
+    // ----------------------
+    (function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const autoImuId = urlParams.get('id');
+      if (autoImuId) {
+        document.getElementById("imuIdInput").value = autoImuId;
+        document.getElementById("connectBtn").click();
+      }
+    })();
   </script>
 </body>
 </html>
