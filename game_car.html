@@ -151,8 +151,8 @@
     var speedPercent = 0.0;
     const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
 
-    const forwardTiltLowerBound = 10.0; // Values less than this will cause the car to move forward at full speed
-    const forwardTiltUpperBound = 20.0; // Values higher than this will cause the cars movement to stop
+    const forwardTiltLowerBound = 10.0; // Absolute values less than this cause the car to move at full speed
+    const forwardTiltUpperBound = 20.0; // Absolute values higher than this will cause the cars movement to stop
 
     let currentTilt = { x: 0, y: 0, z: 0 }; // Latest IMU tilt values (in radians)
     let animationId; // To store the requestAnimationFrame ID
@@ -630,15 +630,16 @@
 
       // Move player
 
-      const forwardTiltInDegrees = currentTilt.y * (180 / Math.PI);
+      const absoluteForwardTiltInDegrees = Math.abs(currentTilt.y * (180 / Math.PI));
 
-      if (forwardTiltInDegrees <= forwardTiltLowerBound) {
+      if (absoluteForwardTiltInDegrees <= forwardTiltLowerBound) {
         speedPercent = 1.0
-      } else if (forwardTiltInDegrees > forwardTiltUpperBound) {
+      } else if (absoluteForwardTiltInDegrees > forwardTiltUpperBound) {
         speedPercent = 0.0
       } else {
-        const currDifference = -(forwardTiltInDegrees - forwardTiltUpperBound)
+        const currDifference = Math.abs(absoluteForwardTiltInDegrees - forwardTiltUpperBound)
         speedPercent = currDifference / (forwardTiltUpperBound - forwardTiltLowerBound)
+        console.log(speedPercent)
       }
 
       playerSpeed = basePlayerSpeed * speedPercent;
