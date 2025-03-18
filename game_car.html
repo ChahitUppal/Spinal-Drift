@@ -69,6 +69,17 @@
       padding: 10px;
       z-index: 1;
     }
+    /* Player name panel style */
+    #playerNamePanel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 10px;
+      z-index: 1;
+      font-size: 16px;
+    }
     #startGameBtn {
       position: absolute;
       bottom: 20px;
@@ -103,6 +114,11 @@
   <div id="gameOver">Game Over</div>
   <!-- Countdown display -->
   <div id="countdown"></div>
+  <!-- Player Name panel -->
+  <div id="playerNamePanel">
+    <label for="playerNameInput">Player Name:</label>
+    <input type="text" id="playerNameInput" placeholder="Enter player name" />
+  </div>
   <!-- IMU connection panel -->
   <div id="imuPanel">
     <label for="imuIdInput">Enter IMU ID:</label>
@@ -116,7 +132,7 @@
   
   <script>
     // ----------------------
-    // Three.js Game Variables
+    // Global Game Variables
     // ----------------------
     let scene, camera, renderer;
     let player;                // The player's car (Group object)
@@ -126,15 +142,17 @@
     let score = 0;
     let highScore = 0;         // Track the user's best score across attempts
 
-    // Movement / World logic
+    // Global variable for player name
+    let playerName = "";
 
+    // Movement / World logic
     const basePlayerSpeed = 0.2; // Base forward movement speed
     var playerSpeed = basePlayerSpeed;      
     var speedPercent = 0.0;
     const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
 
-    const forwardTiltLowerBound = 10.0 // Values less than this will cause the car to move forward at full speed
-    const forwardTiltUpperBound = 20.0 // Values higher than this will cause the cars movement to stop
+    const forwardTiltLowerBound = 10.0; // Values less than this will cause the car to move forward at full speed
+    const forwardTiltUpperBound = 20.0; // Values higher than this will cause the cars movement to stop
 
     let currentTilt = { x: 0, y: 0, z: 0 }; // Latest IMU tilt values (in radians)
     let animationId; // To store the requestAnimationFrame ID
@@ -443,8 +461,6 @@
           if (player.position.x > maxX) player.position.x = maxX;
         }
       },
-
-
       bridge: {
         length: 40, // Default bridge segment length.
         spawn: function(zStart, length) {
@@ -613,7 +629,7 @@
       animationId = requestAnimationFrame(animate);
 
       // Move player
-      
+
       const forwardTiltInDegrees = currentTilt.y * (180 / Math.PI);
 
       if (forwardTiltInDegrees <= forwardTiltLowerBound) {
@@ -763,6 +779,14 @@
     // Start Game on Button Click (with countdown)
     // ----------------------
     document.getElementById("startGameBtn").addEventListener("click", function() {
+      // Ensure player name is set
+      const inputName = document.getElementById("playerNameInput").value.trim();
+      if (!inputName) {
+        alert("Please enter a player name before starting the game.");
+        return;
+      }
+      playerName = inputName; // Save to global variable
+      
       const imuId = document.getElementById("imuIdInput").value.trim();
       if (!imuId) {
         alert("Please enter an IMU ID before starting the game.");
