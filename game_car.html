@@ -131,6 +131,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
+  <audio id="audio"></audio>
   <div id="score">Score: 0</div>
   <div id="highScore">High Score: 0</div>
   <div id="wsMessage">Latest Message: </div>
@@ -202,6 +203,36 @@
     const roadWidth = 20;      // Overall road width
     const minCarSeparation = 2.0; 
     const sideMargin = 1.0;
+
+    // Audio
+    const audio = document.getElementById("audio");
+
+    // List of audio file options
+    const audioFiles = [
+        "audio/BackOnTrack.ogg",
+    ];
+
+    function playRandomAudio() {
+        // Select a random file from the array
+        const randomIndex = Math.floor(Math.random() * audioFiles.length);
+        const selectedFile = audioFiles[randomIndex];
+
+        // Set the selected file as the audio source
+        audio.src = selectedFile;
+        audio.play();
+
+        console.log(`Playing: ${selectedFile}`);
+    }
+
+    function stopAudio() {
+        audio.pause();
+        audio.currentTime = 0; // Reset playback
+    }
+
+    function changeSpeed(value) {
+        audio.playbackRate = value;
+        console.log(`Playback speed: ${value}`);
+    }
 
     // Global flag to ensure no two consecutive bridge segments.
     let lastSegmentBridge = false;
@@ -729,6 +760,8 @@
         const currDifference = Math.abs(absoluteForwardTiltInDegrees - forwardTiltUpperBound);
         speedPercent = currDifference / (forwardTiltUpperBound - forwardTiltLowerBound);
       }
+
+      changeSpeed(speedPercent);
       playerSpeed = basePlayerSpeed * speedPercent;
       player.position.z += playerSpeed;
       const tiltInDegrees = -currentTilt.x * (180 / Math.PI);
@@ -783,6 +816,7 @@
     // End the game
     // ----------------------
     function endGame() {
+      stopAudio();
       gameOver = true;
       cancelAnimationFrame(animationId);
       updateHighScore();
@@ -834,6 +868,7 @@
           }, 500);
         }
       }, 1000);
+      playRandomAudio();
     }
 
     // ----------------------
