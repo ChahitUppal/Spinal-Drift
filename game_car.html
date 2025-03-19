@@ -60,16 +60,6 @@
       padding: 20px 40px;
       border-radius: 10px;
     }
-    #playerNamePanel {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.5);
-      color: white;
-      padding: 10px;
-      z-index: 1;
-      font-size: 16px;
-    }
     #imuPanel {
       position: absolute;
       top: 10px;
@@ -148,10 +138,7 @@
       <option value="180000">3 Minutes</option>
     </select>
   </div>
-  <div id="playerNamePanel">
-    <label for="playerNameInput">Player Name:</label>
-    <input type="text" id="playerNameInput" placeholder="Enter player name" />
-  </div>
+ 
   <div id="imuPanel">
     <label for="imuIdInput">Enter IMU ID:</label>
     <input type="text" id="imuIdInput" placeholder="e.g., my_imu_id" />
@@ -219,6 +206,7 @@
 
         // Set the selected file as the audio source
         audio.src = selectedFile;
+        audio.volume = 0.4;
         audio.play();
 
         console.log(`Playing: ${selectedFile}`);
@@ -946,12 +934,6 @@
     // Start Game on Button Click (with countdown)
     // ----------------------
     document.getElementById("startGameBtn").addEventListener("click", function() {
-      const inputName = document.getElementById("playerNameInput").value.trim();
-      if (!inputName) {
-        alert("Please enter a player name before starting the game.");
-        return;
-      }
-      playerName = inputName;
       const imuId = document.getElementById("imuIdInput").value.trim();
       if (!imuId) {
         alert("Please enter an IMU ID before starting the game.");
