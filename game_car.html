@@ -305,19 +305,50 @@
 
     function animateCrash(object) {
       const originalPos = object.position.clone();
-      const shakeDuration = 300;
-      const startTime = performance.now();
-      let shakeInterval = setInterval(() => {
-        let elapsed = performance.now() - startTime;
-        if (elapsed > shakeDuration) {
-          clearInterval(shakeInterval);
-          object.position.copy(originalPos);
-        } else {
-          object.position.x = originalPos.x + (Math.random() - 0.5) * 0.3;
-          object.position.z = originalPos.z + (Math.random() - 0.5) * 0.3;
-        }
-      }, 30);
+      const explosionPos = object.position.clone();
+      console.log(explosionPos);
+      explosionPos.z -= 1;
+      explosionPos.y += 1;
+
+      // Load the explosion GIF texture
+      const textureLoader = new THREE.TextureLoader();
+      textureLoader.load('explosion.gif', function(texture) {
+        // Create a sprite material using the explosion texture
+        const spriteMaterial = new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true
+        });
+        // Create the explosion sprite
+        const explosionSprite = new THREE.Sprite(spriteMaterial);
+        // Position it at the location of the crash
+        explosionSprite.position.copy(explosionPos);
+        // Adjust the scale to control the size of the explosion
+        explosionSprite.scale.set(3, 3, 1);
+        // Add the sprite to the scene
+        scene.add(explosionSprite);
+
+        // Remove the explosion effect after 1 second
+        setTimeout(() => {
+          scene.remove(explosionSprite);
+          spriteMaterial.dispose();
+          texture.dispose();
+        }, 1000);
+      });
+
+  // Shake the object to simulate the crash impact
+  const shakeDuration = 300;
+  const startTime = performance.now();
+  let shakeInterval = setInterval(() => {
+    let elapsed = performance.now() - startTime;
+    if (elapsed > shakeDuration) {
+      clearInterval(shakeInterval);
+      object.position.copy(originalPos);
+    } else {
+      object.position.x = originalPos.x + (Math.random() - 0.5) * 0.3;
+      object.position.z = originalPos.z + (Math.random() - 0.5) * 0.3;
     }
+  }, 30);
+}
 
     function rewindPlayerBehindBridge(segData) {
       const behindDist = 15;
