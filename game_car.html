@@ -693,12 +693,12 @@
         }
       }
 
-      // 3) Rotate coins and check for coin collection
+      // 3) Rotate coins and check for coin collection using a spherical hitbox
       const playerBox = new THREE.Box3().setFromObject(player);
       for (let i = coins.length - 1; i >= 0; i--) {
-        coins[i].rotation.y += 0.1;
-        const coinBox = new THREE.Box3().setFromObject(coins[i]);
-        if (playerBox.intersectsBox(coinBox)) {
+        coins[i].rotation.z += 0.05;
+        const coinSphere = new THREE.Sphere(coins[i].position, 0.5);
+        if (playerBox.intersectsSphere(coinSphere)) {
           scene.remove(coins[i]);
           coins.splice(i, 1);
           coinBonus += 10;
