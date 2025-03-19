@@ -137,9 +137,11 @@
     let scene, camera, renderer;
     let player;                // The player's car (Group object)
     let obstacles = [];        // Array of obstacle (parked) cars
+    let coins = [];            // Array of collectible coins
     let roadSegments = [];     // Array of segments (road, water, bridge, etc.)
     let gameOver = false;
     let score = 0;
+    let coinBonus = 0;         // Bonus score from coins
     let highScore = 0;         // Track the user's best score across attempts
 
     // Global variable for player name
@@ -234,6 +236,17 @@
       backRightWheel.position.set(-0.4, 0, -0.7);
       carGroup.add(backRightWheel);
       return carGroup;
+    }
+    
+    // ----------------------
+    // Create a coin collectible
+    // ----------------------
+    function createCoin() {
+      const coinGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.1, 32);
+      const coinMaterial = new THREE.MeshPhongMaterial({ color: 0xffff00 });
+      const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+      coin.rotation.x = Math.PI / 2; // Lay flat
+      return coin;
     }
 
     // ----------------------
@@ -442,6 +455,19 @@
           roadSegments.push(leftLine);
           roadSegments.push(rightLine);
           roadSegments.push(middleLine);
+          
+          // ---------------------------------------------------
+          // 3) Spawn coins along the curved road middle line
+          // ---------------------------------------------------
+          for (let i = 0; i < numPoints; i++) {
+            if (Math.random() < 0.3) { // 30% chance to spawn a coin at this point
+              const coin = createCoin();
+              coin.position.copy(middleCurvePoints[i]);
+              coin.position.y += 0.5; // position coin slightly above the road
+              scene.add(coin);
+              coins.push(coin);
+            }
+          }
         },
         handleCollisions(data) {
           // Figure out param t for how far along the curve we are
@@ -569,6 +595,8 @@
       spawnZ = 0;
       obstacles = [];
       roadSegments = [];
+      coins = [];
+      coinBonus = 0;
       score = 0;
       gameOver = false;
       document.getElementById("gameOver").style.display = "none";
@@ -604,10 +632,10 @@
     }
 
     // ----------------------
-    // Update score based on player's z position
+    // Update score based on player's z position and collected coins
     // ----------------------
     function updateScore() {
-      score = Math.floor(player.position.z);
+      score = Math.floor(player.position.z) + coinBonus;
       document.getElementById("score").textContent = "Score: " + score;
     }
 
@@ -665,14 +693,24 @@
         }
       }
 
-      
+      // 3) Rotate coins and check for coin collection
+      const playerBox = new THREE.Box3().setFromObject(player);
+      for (let i = coins.length - 1; i >= 0; i--) {
+        coins[i].rotation.y += 0.1;
+        const coinBox = new THREE.Box3().setFromObject(coins[i]);
+        if (playerBox.intersectsBox(coinBox)) {
+          scene.remove(coins[i]);
+          coins.splice(i, 1);
+          coinBonus += 10;
+        }
+      }
 
       // 4) Spawn more road if needed
       if (player.position.z + spawnDistance > spawnZ) {
         spawnChunk(spawnZ);
       }
 
-      // 5) Check collisions
+      // 5) Check collisions with obstacles
       if (checkCollisions()) {
         endGame();
       }
@@ -703,9 +741,12 @@
       }
       obstacles.forEach(o => scene.remove(o));
       roadSegments.forEach(r => scene.remove(r));
+      coins.forEach(c => scene.remove(c));
       scene.remove(player);
       obstacles = [];
       roadSegments = [];
+      coins = [];
+      coinBonus = 0;
       // Hide game over UI and trigger countdown before re‑initializing
       document.getElementById("gameOver").style.display = "none";
       document.getElementById("restartGameBtn").style.display = "none";
