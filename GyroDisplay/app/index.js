@@ -1,21 +1,25 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, TextInput } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { DeviceMotion } from "expo-sensors";
 
-const { width } = Dimensions.get("window");
-const CIRCLE_RADIUS = width * 0.35;
-const BALL_RADIUS = 15;
+const { width, height } = Dimensions.get("window");
+const CIRCLE_RADIUS = height * 0.28; // Adjusted for landscape mode
+const BALL_RADIUS = 10;
 
 // WebSocket connection constants
 const WS_HOST = "personal-site-oi5a.onrender.com";
-const IMU_ID = "nick3"; // You can use this IMU ID on the server
+const DEFAULT_IMU_ID = "Steve"; // Default IMU ID
 
 export default function App() {
-  // Logging interval in milliseconds (can be changed)
+  // User-configurable IMU ID
+  const [imuId, setImuId] = useState(DEFAULT_IMU_ID);
+  
+  // Logging interval in milliseconds
   const [loggingInterval, setLoggingInterval] = useState(50);
   
-  // Current tilt values (no accumulation with previous values)
-  const [tilt, setTilt] = useState({ x: 0, y: 0, z: 0 });
+  // Current tilt values
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
   
   // Position values for the ball
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -41,10 +45,24 @@ export default function App() {
   const updateCounterRef = useRef(0);
   
   // Ref to store the latest tilt and position values for logging
-  const latestValuesRef = useRef({ tilt: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0 } });
+  const latestValuesRef = useRef({ tilt: { x: 0, y: 0 }, position: { x: 0, y: 0 } });
   
   // WebSocket reference
   const wsRef = useRef(null);
+
+  // Tilt threshold for red overlay
+  const tiltThreshold = 0.3; // Radians (~17 degrees)
+  
+  // Calculate overlay opacity based on tilt
+  const getOverlayOpacity = () => {
+    const xTilt = Math.abs(tilt.y);
+    if (xTilt <= tiltThreshold) return 0;
+    
+    // Map tilt from threshold to 1 radian (~57 degrees) to opacity 0 to 0.7
+    const maxTilt = 1;
+    const opacity = Math.min(((xTilt - tiltThreshold) / (maxTilt - tiltThreshold)) * 0.7, 0.7);
+    return opacity;
+  };
 
   useEffect(() => {
     console.log("App initialized - subscribing to sensors");
@@ -57,7 +75,7 @@ export default function App() {
       _stopLogging();
       _disconnectWebSocket();
     };
-  }, [loggingInterval]);
+  }, [loggingInterval, imuId]);
 
   // Update the ref whenever tilt changes
   useEffect(() => {
@@ -72,8 +90,7 @@ export default function App() {
   // WebSocket connection function
   const _connectWebSocket = () => {
     try {
-      console.log("HELLO");
-      const wsUrl = `wss://${WS_HOST}/api/ws/imu/${IMU_ID}/upload/`;
+      const wsUrl = `wss://${WS_HOST}/api/ws/imu/${imuId}/upload/`;
       console.log(`Connecting to WebSocket: ${wsUrl}`);
       
       // Close existing connection if any
@@ -119,19 +136,10 @@ export default function App() {
   
   // Function to send data to WebSocket
   const _sendDataToWebSocket = (data) => {
-    // Note: If reconnection logic is desired, you can uncomment and adjust accordingly
-    /*
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const message = JSON.stringify(data);
       wsRef.current.send(message);
-    } else {
-      console.warn("WebSocket not connected, reconnecting...");
-      _connectWebSocket();
     }
-    */
-    
-    const message = JSON.stringify(data);
-    wsRef.current.send(message);
   };
 
   const _startLogging = () => {
@@ -150,8 +158,7 @@ export default function App() {
         timestamp: Date.now(),
         tilt: {
           x: currentTilt.x,
-          y: currentTilt.y,
-          z: currentTilt.z
+          y: currentTilt.y
         },
         ballPosition: {
           x: currentPosition.x / (CIRCLE_RADIUS * 0.8),
@@ -160,10 +167,10 @@ export default function App() {
         gyroscope: {
           x: currentTilt.x,
           y: currentTilt.y,
-          z: currentTilt.z
+          z: 0
         },
         accelerometer: {
-          x: 0, // We don't have accelerometer data in this app
+          x: 0,
           y: 0,
           z: 0
         },
@@ -203,26 +210,23 @@ export default function App() {
       updateCounterRef.current += 1;
 
       // Get absolute rotation values in radians
-      const { alpha, beta, gamma } = rotation; 
-      // alpha = yaw (around z-axis)
+      const { beta, gamma } = rotation; 
       // beta = pitch (tilt forward/backward)
       // gamma = roll (tilt side to side)
 
-      // Convert radians to degrees
+      // Just use the pitch and roll for a landscape orientation
       const tiltX = beta;
       const tiltY = gamma;
-      const tiltZ = alpha;
 
       setTilt({
         x: parseFloat(tiltX.toFixed(2)),
-        y: parseFloat(tiltY.toFixed(2)),
-        z: parseFloat(tiltZ.toFixed(2)),
+        y: parseFloat(tiltY.toFixed(2))
       });
 
       // Convert tilt angles to ball position
       const scaleFactor = CIRCLE_RADIUS * 0.65;
-      let rawX = tiltY * scaleFactor;
-      let rawY = -tiltX * scaleFactor;
+      let rawX = tiltX * scaleFactor;
+      let rawY = tiltY * scaleFactor;
 
       // Ensure ball stays within the circle
       const distance = Math.sqrt(rawX * rawX + rawY * rawY);
@@ -246,7 +250,6 @@ export default function App() {
     }
   };
 
-
   const _unsubscribeFromSensors = () => {
     console.log("Unsubscribing from sensors");
     subscription && subscription.remove();
@@ -260,7 +263,7 @@ export default function App() {
   const resetSensors = () => {
     console.log("Resetting sensors");
     // Reset tilt and position
-    setTilt({ x: 0, y: 0, z: 0 });
+    setTilt({ x: 0, y: 0 });
     setPosition({ x: 0, y: 0 });
     
     // Reset update counter
@@ -277,9 +280,8 @@ export default function App() {
     
     let description = [];
     
-    // Properly indicate forward/backward based on x-orientation
-    if (tilt.x < -0.1) description.push("Backward");
-    else if (tilt.x > 0.1) description.push("Forward");
+    if (tilt.x < -0.1) description.push("Forward");
+    else if (tilt.x > 0.1) description.push("Backward");
     
     if (tilt.y < -0.1) description.push("Right");
     else if (tilt.y > 0.1) description.push("Left");
@@ -289,6 +291,14 @@ export default function App() {
 
   return (
     <View style={styles.container}>
+      {/* Red overlay when tilted too far */}
+      {getOverlayOpacity() > 0 && (
+        <View style={[
+          styles.redOverlay, 
+          { opacity: getOverlayOpacity() }
+        ]} />
+      )}
+      
       {!isInitialized && (
         <View style={styles.initOverlay}>
           <Text style={styles.initText}>Press RESET to initialize</Text>
@@ -298,66 +308,112 @@ export default function App() {
         </View>
       )}
       
-      <Text style={styles.title}>Tilt Balance Game</Text>
+      <Text style={styles.title}>Spine Rehab</Text>
       
-      <View style={styles.dataContainer}>
-        <Text style={styles.data}>Tilt: {getTiltDescription()}</Text>
-        <Text style={styles.data}>Pitch: {tilt.x.toFixed(2)}°</Text>
-        <Text style={styles.data}>Roll: {tilt.y.toFixed(2)}°</Text>
-        <Text style={styles.data}>Yaw: {tilt.z.toFixed(2)}°</Text>
-        <Text style={styles.sensorStatus}>
-          Sensor: {debugValues.gyroActive ? "Active" : "Inactive"}
-        </Text>
-        <Text style={styles.sensorStatus}>
-          WebSocket: {debugValues.wsConnected ? "Connected" : "Disconnected"}
-        </Text>
-        <Text style={styles.wsNote}>IMU ID: {IMU_ID}</Text>
-      </View>
-      
-      <View style={styles.platformContainer}>
-        {/* Main platform circle */}
-        <View style={styles.platformOuter}>
-          <View style={styles.platformInner}>
-            {/* Grid lines for visual reference */}
-            <View style={styles.gridHorizontal} />
-            <View style={styles.gridVertical} />
+      <View style={styles.horizontalContainer}>
+        <View style={styles.leftPanel}>
+          <View style={styles.dataContainer}>
+            {/*<Text style={styles.data}>Tilt: {getTiltDescription()}</Text>
+            <Text style={styles.data}>Forward/Back: {tilt.x.toFixed(2)}°</Text>
+            <Text style={styles.data}>Left/Right: {tilt.y.toFixed(2)}°</Text>
+            <Text style={styles.sensorStatus}>
+              Sensor: {debugValues.gyroActive ? "Active" : "Inactive"}
+            </Text>*/}
+            <Text style={styles.sensorStatus}>
+              WebSocket: {debugValues.wsConnected ? "Connected" : "Disconnected"}
+            </Text>
             
-            {/* Diagonal grid lines */}
-            <View style={[styles.gridDiagonal, { transform: [{ rotate: '45deg' }] }]} />
-            <View style={[styles.gridDiagonal, { transform: [{ rotate: '135deg' }] }]} />
+            <View style={styles.imuContainer}>
+              <Text style={styles.imuLabel}>IMU ID:</Text>
+              <TextInput
+                style={styles.imuInput}
+                value={imuId}
+                onChangeText={setImuId}
+                onBlur={() => _connectWebSocket()}
+              />
+            </View>
             
-            {/* Ball that rolls around */}
-            <View 
-              style={[
-                styles.ball,
-                {
-                  transform: [
-                    { translateX: position.x },
-                    { translateY: -position.y }
-                  ]
-                }
-              ]}
-            >
-              <View style={styles.ballHighlight} />
+            <TouchableOpacity style={styles.resetButton} onPress={resetSensors}>
+              <Text style={styles.resetButtonText}>RESET</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.rightPanel}>
+          <View style={styles.platformContainer}>
+            {/* Direction labels */}
+            <Text style={[styles.directionLabel, styles.forwardLabel]}>Forward</Text>
+            <Text style={[styles.directionLabel, styles.backwardLabel]}>Backward</Text>
+            <Text style={[styles.directionLabel, styles.leftLabel]}>Left</Text>
+            <Text style={[styles.directionLabel, styles.rightLabel]}>Right</Text>
+            
+            {/* Main platform circle */}
+            <View style={styles.platformOuter}>
+              <View style={styles.platformInner}>
+                {/* Grid lines for visual reference */}
+                <View style={styles.gridHorizontal} />
+                <View style={styles.gridVertical} />
+                
+                {/* Diagonal grid lines */}
+                <View style={[styles.gridDiagonal, { transform: [{ rotate: '45deg' }] }]} />
+                <View style={[styles.gridDiagonal, { transform: [{ rotate: '135deg' }] }]} />
+                
+                {/* Ball that rolls around */}
+                <View 
+                  style={[
+                    styles.ball,
+                    {
+                      transform: [
+                        { translateX: position.x },
+                        { translateY: -position.y }
+                      ]
+                    }
+                  ]}
+                >
+                  <View style={styles.ballHighlight} />
+                </View>
+              </View>
             </View>
           </View>
         </View>
       </View>
-      
-      <TouchableOpacity style={styles.resetButton} onPress={resetSensors}>
-        <Text style={styles.resetButtonText}>RESET</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: 'white', // Adjust as needed
+  },
   container: { 
     flex: 1, 
     justifyContent: "center", 
     alignItems: "center", 
     backgroundColor: "#1a1f2b",
     padding: 20
+  },
+  horizontalContainer: {
+    flexDirection: 'row',
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 40
+  },
+  leftPanel: {
+    flex: 1,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingRight: 20
+  },
+  rightPanel: {
+    flex: 1,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: 20
   },
   title: { 
     fontSize: 32, 
@@ -372,7 +428,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 15,
     padding: 15,
-    marginBottom: 30,
     width: "100%",
     alignItems: "center",
     borderWidth: 1,
@@ -389,18 +444,30 @@ const styles = StyleSheet.create({
     color: "#aaaaaa",
     marginTop: 10
   },
-  wsNote: {
-    fontSize: 14,
-    color: "#4a90e2",
-    marginTop: 5
+  imuContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 20
+  },
+  imuLabel: {
+    fontSize: 16,
+    color: "#ffffff",
+    marginRight: 10
+  },
+  imuInput: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    padding: 10,
+    borderRadius: 5,
+    color: "#ffffff",
+    width: 120,
+    fontSize: 16
   },
   platformContainer: {
     alignItems: "center",
     justifyContent: "center",
     width: CIRCLE_RADIUS * 2.2,
     height: CIRCLE_RADIUS * 2.2,
-    marginBottom: 20,
-    padding: 10,
     backgroundColor: "rgba(0,0,0,0.3)",
     borderRadius: CIRCLE_RADIUS * 1.1,
     shadowColor: "#000",
@@ -411,6 +478,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 13.16,
     elevation: 20,
+    position: 'relative'
+  },
+  directionLabel: {
+    position: 'absolute',
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "bold",
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: {width: 1, height: 1},
+    textShadowRadius: 2
+  },
+  forwardLabel: {
+    top: -10,
+  },
+  backwardLabel: {
+    bottom: -15,
+  },
+  leftLabel: {
+    left: -25,
+  },
+  rightLabel: {
+    right: -35,
   },
   platformOuter: {
     width: CIRCLE_RADIUS * 2,
@@ -481,7 +570,7 @@ const styles = StyleSheet.create({
   },
   gridDiagonal: {
     position: "absolute",
-    width: CIRCLE_RADIUS * 2.8, // Longer to span the entire circle
+    width: CIRCLE_RADIUS * 2.8,
     height: 1,
     backgroundColor: "rgba(255,255,255,0.1)"
   },
@@ -490,7 +579,6 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 40,
     borderRadius: 30,
-    marginTop: 20,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -522,5 +610,14 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     textAlign: 'center',
     fontWeight: 'bold'
+  },
+  redOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'red',
+    zIndex: 5
   }
 });
