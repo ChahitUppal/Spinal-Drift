@@ -674,7 +674,7 @@
 
       player.position.z += playerSpeed;
 
-      const tiltInDegrees = currentTilt.x * (180 / Math.PI);
+      const tiltInDegrees = -currentTilt.x * (180 / Math.PI);
       player.position.x += tiltInDegrees * lateralSpeedFactor * speedPercent;
 
       // 1) First, let the camera follow the player
@@ -780,6 +780,8 @@
     // WebSocket (IMU Data) Code
     // ----------------------
     let socket = null;
+    let patternTimeout = null;
+
     document.getElementById("connectBtn").addEventListener("click", function() {
       const imuId = document.getElementById("imuIdInput").value.trim();
       if (!imuId) {
@@ -802,6 +804,7 @@
           const msg = JSON.parse(event.data);
           if (msg.data && msg.data.tilt) {
             currentTilt = msg.data.tilt;
+            detectGesture(currentTilt);
           }
         } catch (e) {
           console.error("Error parsing message:", e);
@@ -816,6 +819,39 @@
         document.getElementById("wsMessage").textContent = "WebSocket error. Check the console for details.";
       };
     });
+
+    const REQUIRED_DURATION = 3000; // 3 seconds in milliseconds
+    let yThresholdStartTime = null;
+
+    function detectGesture(tilt) {
+      // Only run this when startGameBtn is visible
+      if(document.getElementById("gameOver").style.display == "none"){
+        return;
+      }
+      
+      if (tilt.y > 0.5) {
+        // If this is the first time y is > 0.5, record the start time
+        if (yThresholdStartTime === null) {
+          yThresholdStartTime = Date.now();
+          console.log("Y threshold exceeded, starting timer...");
+        } else {
+          // Check how long we've been above threshold
+          const elapsedTime = Date.now() - yThresholdStartTime;
+          console.log(`Y threshold maintained for ${(elapsedTime/1000).toFixed(1)} seconds`);
+          
+          if (elapsedTime >= REQUIRED_DURATION) {
+            console.log("3 seconds threshold reached! Starting game.");
+            document.getElementById("startGameBtn").click();
+          }
+        }
+      } else {
+        // Reset the timer if y drops below threshold
+        if (yThresholdStartTime !== null) {
+          console.log("Y value dropped below threshold, resetting timer");
+          yThresholdStartTime = null;
+        }
+      }
+    }
 
     // ----------------------
     // Start Game on Button Click (with countdown)
