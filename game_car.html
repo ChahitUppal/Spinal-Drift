@@ -304,8 +304,8 @@
     }
 
     function animateCrash(object) {
-      const originalPos = object.position.clone();
-      const explosionPos = object.position.clone();
+  const originalPos = object.position.clone();
+  const explosionPos = object.position.clone();
       console.log(explosionPos);
       explosionPos.z -= 1;
       explosionPos.y += 1;
@@ -754,6 +754,9 @@
         coins[i].rotation.z += 0.05;
         const coinSphere = new THREE.Sphere(coins[i].position, 0.5);
         if (playerBox.intersectsSphere(coinSphere)) {
+          const coinSound = new Audio('coin.mp3');
+          coinSound.currentTime = 0; // Reset time to allow quick replay
+          coinSound.play();
           scene.remove(coins[i]);
           coins.splice(i, 1);
           coinBonus += 10;
