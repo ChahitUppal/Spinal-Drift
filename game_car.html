@@ -100,12 +100,15 @@
       display: none;
     }
     #stopwatch {
-      position: absolute;
-      top: 0px;
-      left: 10px;
-      color: white;
-      font-size: 20px;
-      z-index: 10;
+        position: absolute;
+        top: 10%;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        font-size: 40px;
+        font-weight: bold;
+        z-index: 10;
+        text-align: center;
     }
     #timePanel {
       position: absolute;
@@ -124,7 +127,6 @@
   <audio id="audio"></audio>
   <div id="score">Score: 0</div>
   <div id="highScore">High Score: 0</div>
-  <div id="wsMessage">Latest Message: </div>
   <div id="gameOver">Game Over</div>
   <div id="countdown"></div>
   <div id="scoreChange"></div>
@@ -173,7 +175,7 @@
     const basePlayerSpeed = 0.3; // Base forward movement speed
     var playerSpeed = basePlayerSpeed;      
     var speedPercent = 0.0;
-    const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
+    const lateralSpeedFactor = 0.05; // Factor to convert tilt (in degrees) to lateral movement
 
     const forwardTiltLowerBound = 10.0; // Absolute values less than this cause the car to move at full speed
     const forwardTiltUpperBound = 20.0; // Absolute values higher than this will cause the car's movement to stop
@@ -197,7 +199,30 @@
     // List of audio file options
     const audioFiles = [
         "audio/BackOnTrack.ogg",
+        "audio/BaseAfterBase.ogg",
+        "audio/BlastProcessing.ogg",
+        "audio/CantLetGo.ogg",
+        "audio/Clubstep.ogg",
+        "audio/Clutterfunk.ogg",
+        "audio/Cycles.ogg",
+        "audio/Deadlocked.ogg",
+        "audio/DryOut.ogg",
+        "audio/Electrodynamix.ogg",
+        "audio/Electroman.ogg",
+        "audio/GeometricalDominator.ogg",
+        "audio/HexagonForce.ogg",
+        "audio/Jumper.ogg",
+        "audio/menuLoop.ogg",
+        "audio/Polargeist.ogg",
+        "audio/secretLoop.ogg",
+        "audio/StayInsideMe.ogg",
+        "audio/StereoMadness.ogg",
+        "audio/TheoryOfEverything.ogg",
+        "audio/TheoryOfEverything2.ogg",
+        "audio/TimeMachine.ogg",
+        "audio/xStep.ogg"
     ];
+
 
     function playRandomAudio() {
         // Select a random file from the array
@@ -309,6 +334,25 @@
       const el = document.getElementById("scoreChange");
       el.textContent = text;
       el.style.display = "block";
+      el.style.color = "red";
+      let startTime = performance.now();
+      let fadeInterval = setInterval(() => {
+        let elapsed = performance.now() - startTime;
+        if (elapsed > 1000) {
+          clearInterval(fadeInterval);
+          el.style.display = "none";
+        } else {
+          let opacity = 1 - (elapsed / 1000);
+          el.style.opacity = opacity;
+        }
+      }, 50);
+    }
+
+    function showScoreIncrease(text) {
+      const el = document.getElementById("scoreChange");
+      el.textContent = text;
+      el.style.display = "block";
+      el.style.color = "yellow";
       let startTime = performance.now();
       let fadeInterval = setInterval(() => {
         let elapsed = performance.now() - startTime;
@@ -323,8 +367,12 @@
     }
 
     function animateCrash(object) {
-  const originalPos = object.position.clone();
-  const explosionPos = object.position.clone();
+      const originalPos = object.position.clone();
+      const explosionPos = object.position.clone();
+      const explosionSound = new Audio('audio/explosion.mp3');
+      explosionSound.currentTime = 0; // Reset time to allow quick replay
+
+      explosionSound.play();
       console.log(explosionPos);
       explosionPos.z -= 1;
       explosionPos.y += 1;
@@ -775,6 +823,7 @@
         coins[i].rotation.z += 0.05;
         const coinSphere = new THREE.Sphere(coins[i].position, 0.5);
         if (playerBox.intersectsSphere(coinSphere)) {
+          showScoreIncrease("+20");
           const coinSound = new Audio('coin.mp3');
           coinSound.currentTime = 0; // Reset time to allow quick replay
           coinSound.play();
@@ -879,10 +928,12 @@
       socket = new WebSocket(wsUrl);
       socket.onopen = function(event) {
         console.log("Connected to:", wsUrl);
-        document.getElementById("wsMessage").textContent = "Connected to: " + wsUrl;
+        //document.getElementById("wsMessage").textContent = "Connected to: " + wsUrl;
       };
       socket.onmessage = function(event) {
-        document.getElementById("wsMessage").textContent = event.data;
+
+        // UNCOMMENT THIS FOR DEBUG
+        //document.getElementById("wsMessage").textContent = event.data;
         try {
           const msg = JSON.parse(event.data);
           if (msg.data && msg.data.tilt) {
@@ -895,11 +946,11 @@
       };
       socket.onclose = function(event) {
         console.log("Disconnected from server");
-        document.getElementById("wsMessage").textContent = "Disconnected from server";
+        //document.getElementById("wsMessage").textContent = "Disconnected from server";
       };
       socket.onerror = function(error) {
         console.error("WebSocket error:", error);
-        document.getElementById("wsMessage").textContent = "WebSocket error. Check the console for details.";
+        //document.getElementById("wsMessage").textContent = "WebSocket error. Check the console for details.";
       };
     });
 
