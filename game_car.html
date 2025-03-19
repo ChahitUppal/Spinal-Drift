@@ -60,16 +60,6 @@
       padding: 20px 40px;
       border-radius: 10px;
     }
-    #imuPanel {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.5);
-      color: white;
-      padding: 10px;
-      z-index: 1;
-    }
-    /* Player name panel style */
     #playerNamePanel {
       position: absolute;
       top: 10px;
@@ -79,6 +69,15 @@
       padding: 10px;
       z-index: 1;
       font-size: 16px;
+    }
+    #imuPanel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 10px;
+      z-index: 1;
     }
     #startGameBtn {
       position: absolute;
@@ -97,37 +96,67 @@
       padding: 10px 20px;
       font-size: 18px;
       z-index: 1;
-      display: none; /* Shown only when game is over */
+      display: none;
+    }
+    /* New elements for penalty display and time control */
+    #scoreChange {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: red;
+      font-size: 50px;
+      z-index: 10;
+      display: none;
+    }
+    #stopwatch {
+      position: absolute;
+      top: 0px;
+      left: 10px;
+      color: white;
+      font-size: 20px;
+      z-index: 10;
+    }
+    #timePanel {
+      position: absolute;
+      top: 50px;
+      right: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 10px;
+      z-index: 1;
     }
   </style>
   <!-- Include three.js from CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-  <!-- Score display -->
   <div id="score">Score: 0</div>
-  <!-- High score display -->
   <div id="highScore">High Score: 0</div>
-  <!-- Most recent WebSocket message display -->
   <div id="wsMessage">Latest Message: </div>
-  <!-- Game Over message -->
   <div id="gameOver">Game Over</div>
-  <!-- Countdown display -->
   <div id="countdown"></div>
-  <!-- Player Name panel -->
+  <div id="scoreChange"></div>
+  <div id="stopwatch">Time: 0:00</div>
+  <div id="timePanel">
+    <label for="gameTimeSelect">Select Game Duration:</label>
+    <select id="gameTimeSelect">
+      <option value="30000">30 Seconds</option>
+      <option value="60000">1 Minute</option>
+      <option value="120000">2 Minutes</option>
+      <option value="180000">3 Minutes</option>
+    </select>
+  </div>
   <div id="playerNamePanel">
     <label for="playerNameInput">Player Name:</label>
     <input type="text" id="playerNameInput" placeholder="Enter player name" />
   </div>
-  <!-- IMU connection panel -->
   <div id="imuPanel">
     <label for="imuIdInput">Enter IMU ID:</label>
     <input type="text" id="imuIdInput" placeholder="e.g., my_imu_id" />
     <button id="connectBtn">Connect</button>
   </div>
-  <!-- Start Game button -->
   <button id="startGameBtn">Start Game</button>
-  <!-- Restart Game button -->
   <button id="restartGameBtn">Restart</button>
   
   <script>
@@ -143,7 +172,12 @@
     let score = 0;
     let coinBonus = 0;         // Bonus score from coins
     let highScore = 0;         // Track the user's best score across attempts
-
+    let gameDuration = 0;
+    let gameStartTime = 0;
+    let penalty = 0;
+    let effectiveScore = 0;
+    let bridgePenaltyActive = false;
+    
     // Global variable for player name
     let playerName = "";
 
@@ -154,7 +188,7 @@
     const lateralSpeedFactor = 0.01; // Factor to convert tilt (in degrees) to lateral movement
 
     const forwardTiltLowerBound = 10.0; // Absolute values less than this cause the car to move at full speed
-    const forwardTiltUpperBound = 20.0; // Absolute values higher than this will cause the cars movement to stop
+    const forwardTiltUpperBound = 20.0; // Absolute values higher than this will cause the car's movement to stop
 
     let currentTilt = { x: 0, y: 0, z: 0 }; // Latest IMU tilt values (in radians)
     let animationId; // To store the requestAnimationFrame ID
@@ -245,8 +279,61 @@
       const coinGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.1, 32);
       const coinMaterial = new THREE.MeshPhongMaterial({ color: 0xffff00 });
       const coin = new THREE.Mesh(coinGeometry, coinMaterial);
-      coin.rotation.x = Math.PI / 2; // Lay flat
+      coin.rotation.x = Math.PI / 2;
       return coin;
+    }
+
+    // ----------------------
+    // Utility Functions for Penalty and Animation
+    // ----------------------
+    function showScorePenalty(text) {
+      const el = document.getElementById("scoreChange");
+      el.textContent = text;
+      el.style.display = "block";
+      let startTime = performance.now();
+      let fadeInterval = setInterval(() => {
+        let elapsed = performance.now() - startTime;
+        if (elapsed > 1000) {
+          clearInterval(fadeInterval);
+          el.style.display = "none";
+        } else {
+          let opacity = 1 - (elapsed / 1000);
+          el.style.opacity = opacity;
+        }
+      }, 50);
+    }
+
+    function animateCrash(object) {
+      const originalPos = object.position.clone();
+      const shakeDuration = 300;
+      const startTime = performance.now();
+      let shakeInterval = setInterval(() => {
+        let elapsed = performance.now() - startTime;
+        if (elapsed > shakeDuration) {
+          clearInterval(shakeInterval);
+          object.position.copy(originalPos);
+        } else {
+          object.position.x = originalPos.x + (Math.random() - 0.5) * 0.3;
+          object.position.z = originalPos.z + (Math.random() - 0.5) * 0.3;
+        }
+      }, 30);
+    }
+
+    function rewindPlayerBehindBridge(segData) {
+      const behindDist = 15;
+      let behindZ = segData.zStart - behindDist;
+      if (behindZ < 0) behindZ = 0;
+      player.position.x = (segData.bridgeXMin + segData.bridgeXMax) / 2;
+      player.position.z = behindZ;
+    }
+
+    function updateStopwatch() {
+      let elapsedMs = performance.now() - gameStartTime;
+      let totalSec = Math.floor(elapsedMs / 1000);
+      let minutes = Math.floor(totalSec / 60);
+      let seconds = totalSec % 60;
+      let secondsStr = (seconds < 10) ? ("0" + seconds) : seconds;
+      document.getElementById("stopwatch").textContent = "Time: " + minutes + ":" + secondsStr;
     }
 
     // ----------------------
@@ -255,9 +342,8 @@
     // ----------------------
     const segmentTypes = {
       straightRoad: {
-        length: 50, // Default road segment length.
+        length: 50,
         spawn: function(zStart, length) {
-          // Spawn the road surface.
           const geometry = new THREE.PlaneGeometry(roadWidth, length);
           const material = new THREE.MeshPhongMaterial({ color: 0x444444 });
           const road = new THREE.Mesh(geometry, material);
@@ -271,7 +357,6 @@
           scene.add(road);
           roadSegments.push(road);
 
-          // Spawn road lines (dashes).
           const dashLength = 2, dashSpace = 4;
           const dashCount = Math.floor(length / dashSpace);
           for (let i = 0; i < dashCount; i++) {
@@ -285,7 +370,6 @@
             roadSegments.push(dash);
           }
 
-          // Spawn left and right boundary lines.
           const leftLineGeom = new THREE.PlaneGeometry(0.1, length);
           const leftLineMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
           const leftLine = new THREE.Mesh(leftLineGeom, leftLineMat);
@@ -298,7 +382,6 @@
           scene.add(rightLine);
           roadSegments.push(rightLine);
 
-          // Spawn obstacles within this road segment.
           for (let z = zStart + obstacleSpacing; z < zStart + length; z += obstacleSpacing) {
             const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff, 0xffffff, 0xffa500];
             const obstacleCount = 2 + Math.floor(Math.random() * 2);
@@ -306,8 +389,8 @@
             for (let i = 0; i < obstacleCount; i++) {
               let attemptCount = 0, foundSpot = false, xPos = 0;
               while (attemptCount < 10 && !foundSpot) {
-                const minX = -roadWidth / 2 + sideMargin; 
-                const maxX = roadWidth / 2 - sideMargin; 
+                const minX = -roadWidth / 2 + sideMargin;
+                const maxX = roadWidth / 2 - sideMargin;
                 xPos = Math.random() * (maxX - minX) + minX;
                 let tooClose = false;
                 for (let px of chosenXPositions) {
@@ -334,7 +417,7 @@
         },
         handleCollisions(data) {
           if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
-          if (player.position.x >  roadWidth / 2) player.position.x =  roadWidth / 2;
+          if (player.position.x > roadWidth / 2) player.position.x = roadWidth / 2;
         }
       },
       curvedRoad: {
@@ -343,8 +426,6 @@
           const wavePeriod = 1;
           const waveWidth = 1;
           const numPoints = 50;
-
-          // Arrays to hold the left, right, and middle curve points
           const leftCurvePoints = [];
           const rightCurvePoints = [];
           const middleCurvePoints = [];
@@ -352,85 +433,53 @@
           for (let i = 0; i < numPoints; i++) {
             const t = i / (numPoints - 1);
             const z = zStart + t * length;
-            const offsetX = (waveWidth * roadWidth * 0.5) * Math.sin(t * wavePeriod * 2 * Math.PI) 
-                            - (waveWidth * roadWidth * 0.5);
+            const offsetX = (waveWidth * roadWidth * 0.5) * Math.sin(t * wavePeriod * 2 * Math.PI) - (waveWidth * roadWidth * 0.5);
             const y = 0.02;
-
-            // Left edge
             leftCurvePoints.push(new THREE.Vector3(offsetX, y, z));
-            // Right edge
             rightCurvePoints.push(new THREE.Vector3(offsetX + roadWidth, y, z));
-            // Middle (for the dashed line)
             middleCurvePoints.push(new THREE.Vector3(offsetX + roadWidth * 0.5, y, z));
           }
 
-          // ---------------------------------------------------
-          // 1) Create a grey mesh that fills between left & right
-          // ---------------------------------------------------
-          // We'll create a triangle strip between leftCurvePoints and rightCurvePoints
-
           const roadGeometry = new THREE.BufferGeometry();
           const positions = [];
-
-          // Build triangles between adjacent pairs
           for (let i = 0; i < numPoints - 1; i++) {
             const pA = leftCurvePoints[i];
             const pB = rightCurvePoints[i];
             const pC = leftCurvePoints[i+1];
             const pD = rightCurvePoints[i+1];
-
-            // Triangle 1: pA -> pB -> pC
             positions.push(pA.x, pA.y, pA.z);
             positions.push(pB.x, pB.y, pB.z);
             positions.push(pC.x, pC.y, pC.z);
-
-            // Triangle 2: pB -> pD -> pC
             positions.push(pB.x, pB.y, pB.z);
             positions.push(pD.x, pD.y, pD.z);
             positions.push(pC.x, pC.y, pC.z);
           }
-
           const positionAttribute = new THREE.Float32BufferAttribute(positions, 3);
           roadGeometry.setAttribute('position', positionAttribute);
-
-          // Basic grey material
           const roadMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0x808080, // grey
+            color: 0x808080,
             side: THREE.DoubleSide 
           });
           const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
-
-          // ---------------------------------------------------
-          // 2) Create dashed lines for left, right, and center
-          // ---------------------------------------------------
           const leftGeometry = new THREE.BufferGeometry().setFromPoints(leftCurvePoints);
           const rightGeometry = new THREE.BufferGeometry().setFromPoints(rightCurvePoints);
           const middleGeometry = new THREE.BufferGeometry().setFromPoints(middleCurvePoints);
-
-          // Use LineDashedMaterial for dashed lines
           const dashedMaterial = new THREE.LineDashedMaterial({
             color: 0xffff00,
-            dashSize: 2,    // length of each dash
-            gapSize: 1      // length of gap between dashes
+            dashSize: 2,
+            gapSize: 1
           });
-
           const leftLine = new THREE.Line(leftGeometry, dashedMaterial);
           const rightLine = new THREE.Line(rightGeometry, dashedMaterial);
-
-          // For the center line, you might want a white dashed line
           const centerDashedMaterial = new THREE.LineDashedMaterial({
             color: 0xffffff,
             dashSize: 2,
             gapSize: 1
           });
           const middleLine = new THREE.Line(middleGeometry, centerDashedMaterial);
-
-          // Important: computeLineDistances() for dashed lines
           leftLine.computeLineDistances();
           rightLine.computeLineDistances();
           middleLine.computeLineDistances();
-
-          // Attach userData so we can clamp X properly in animate()
           [leftLine, rightLine, middleLine].forEach(line => {
             line.userData = {
               segmentType: 'curvedRoad',
@@ -441,56 +490,36 @@
               segmentLength: length
             };
           });
-
-          // ---------------------------------------------------
-          // Add everything to the scene in your preferred order
-          // (Usually add mesh first, then lines on top)
-          // ---------------------------------------------------
           scene.add(roadMesh);
           scene.add(leftLine);
           scene.add(rightLine);
           scene.add(middleLine);
-
-          // Track your road segments if needed
           roadSegments.push(leftLine);
           roadSegments.push(rightLine);
           roadSegments.push(middleLine);
-          
-          // ---------------------------------------------------
-          // 3) Spawn coins along the curved road middle line
-          // ---------------------------------------------------
           for (let i = 0; i < numPoints; i++) {
-            if (Math.random() < 0.3) { // 30% chance to spawn a coin at this point
+            if (Math.random() < 0.3) {
               const coin = createCoin();
               coin.position.copy(middleCurvePoints[i]);
-              coin.position.y += 0.5; // position coin slightly above the road
+              coin.position.y += 0.5;
               scene.add(coin);
               coins.push(coin);
             }
           }
         },
         handleCollisions(data) {
-          // Figure out param t for how far along the curve we are
           const segLength = data.segmentLength;
           const t = (player.position.z - data.zStart) / segLength;
-
-          // The center X of the sine wave at this t
-          const centerX =
-            (data.waveWidth * roadWidth * 0.5)
-            * Math.sin(t * data.wavePeriod * 2 * Math.PI);
-
-          // Then clamp the player so that they stay within ±roadWidth/2 around centerX
+          const centerX = (data.waveWidth * roadWidth * 0.5) * Math.sin(t * data.wavePeriod * 2 * Math.PI);
           const minX = centerX - (roadWidth / 2);
           const maxX = centerX + (roadWidth / 2);
-
           if (player.position.x < minX) player.position.x = minX;
           if (player.position.x > maxX) player.position.x = maxX;
         }
       },
       bridge: {
-        length: 40, // Default bridge segment length.
+        length: 40,
         spawn: function(zStart, length) {
-          // Spawn water below the bridge.
           const waterGeometry = new THREE.PlaneGeometry(roadWidth * 2, length);
           const waterMaterial = new THREE.MeshPhongMaterial({ color: 0x1e90ff });
           const waterPlane = new THREE.Mesh(waterGeometry, waterMaterial);
@@ -499,37 +528,38 @@
           waterPlane.position.y = -0.1;
           scene.add(waterPlane);
           roadSegments.push(waterPlane);
-          
-          // Define the bridge: a narrow road over the water.
           const bridgeWidth = roadWidth / 5;
           const minX = -roadWidth/2 + bridgeWidth/2;
           const maxX = roadWidth/2 - bridgeWidth/2;
           const bridgeCenterX = Math.random() * (maxX - minX) + minX;
-          
           const bridgeGeometry = new THREE.PlaneGeometry(bridgeWidth, length);
           const bridgeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
           const bridge = new THREE.Mesh(bridgeGeometry, bridgeMaterial);
           bridge.rotation.x = -Math.PI / 2;
           bridge.position.set(bridgeCenterX, 0.01, zStart + length / 2);
-          
           scene.add(bridge);
           roadSegments.push(bridge);
-          
-          // Store bridge boundaries and segment length in userData.
-          bridge.userData.segmentType = "bridge";
-          bridge.userData.isBridge = true;
-          bridge.userData.bridgeXMin = bridgeCenterX - bridgeWidth/2;
-          bridge.userData.bridgeXMax = bridgeCenterX + bridgeWidth/2;
-          bridge.userData.segmentLength = length;
-          bridge.userData.zStart = zStart;
-          bridge.userData.zEnd = zStart + length;
+          bridge.userData = {
+            segmentType: "bridge",
+            isBridge: true,
+            bridgeXMin: bridgeCenterX - bridgeWidth/2,
+            bridgeXMax: bridgeCenterX + bridgeWidth/2,
+            segmentLength: length,
+            zStart: zStart,
+            zEnd: zStart + length
+          };
         },
-        handleCollisions: function(data) {
-          let segLength = data.segmentLength || segmentTypes.bridge.length;
-          // If within Z-bounds, also check X-bounds
+        handleCollisions(data) {
           if (player.position.x < data.bridgeXMin || player.position.x > data.bridgeXMax) {
-            endGame();
-            return;
+            if (!bridgePenaltyActive) {
+              penalty += 20;
+              showScorePenalty("-20");
+              rewindPlayerBehindBridge(data);
+              updateScore();
+              bridgePenaltyActive = true;
+            } else {
+              bridgePenaltyActive = false;
+            }
           }
         }
       }
@@ -537,11 +567,9 @@
 
     // ----------------------
     // Unified function to spawn a segment chunk.
-    // Determines segment type and length.
     // ----------------------
     function spawnChunk(zStart) {
       let segmentType;
-      // First segment is always road; also prevent consecutive bridges.
       if (zStart === 0 || lastSegmentBridge) {
         segmentType = "straightRoad";
       } else {
@@ -549,17 +577,13 @@
         if (rand < 0.2) {
           segmentType = "bridge";
         } else if (rand < 0.5) {
-          // This 0.5 cutoff means 20% for bridge (above) 
-          // + 30% for curvedRoad (the difference between 0.5 and 0.2).
           segmentType = "curvedRoad";
         } else {
           segmentType = "straightRoad";
         }
       }
-      // Allow random variation in segment length (between 80% and 120% of default).
       let baseLength = segmentTypes[segmentType].length;
       let segmentLength = baseLength * (0.8 + Math.random() * 0.4);
-      // Spawn the chosen segment.
       segmentTypes[segmentType].spawn(zStart, segmentLength);
       lastSegmentBridge = (segmentType === "bridge");
       spawnZ += segmentLength;
@@ -569,18 +593,16 @@
     // Initialize the three.js scene and game objects
     // ----------------------
     function init() {
-      // Remove any old renderer
       if (renderer && renderer.domElement) {
         document.body.removeChild(renderer.domElement);
       }
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x87CEEB); // sky blue
+      scene.background = new THREE.Color(0x87CEEB);
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 5, -10);
       camera.lookAt(0, 0, 0);
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      // Ensure the canvas is behind UI elements
       renderer.domElement.style.position = "absolute";
       renderer.domElement.style.zIndex = "0";
       document.body.appendChild(renderer.domElement);
@@ -597,14 +619,19 @@
       roadSegments = [];
       coins = [];
       coinBonus = 0;
+      penalty = 0;
       score = 0;
+      effectiveScore = 0;
       gameOver = false;
       document.getElementById("gameOver").style.display = "none";
       document.getElementById("restartGameBtn").style.display = "none";
-      // Reset the last segment flag on game start.
       lastSegmentBridge = false;
       spawnChunk(spawnZ);
       window.addEventListener('resize', onWindowResize, false);
+      const timeSelect = document.getElementById("gameTimeSelect");
+      const chosenMs = parseInt(timeSelect.value, 10);
+      gameDuration = chosenMs;
+      gameStartTime = performance.now();
       animate();
     }
 
@@ -618,33 +645,39 @@
     }
 
     // ----------------------
-    // Check for collisions with obstacles
+    // Check for collisions with obstacles and apply penalty
     // ----------------------
     function checkCollisions() {
       const playerBox = new THREE.Box3().setFromObject(player);
-      for (let obs of obstacles) {
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
         const obsBox = new THREE.Box3().setFromObject(obs);
         if (playerBox.intersectsBox(obsBox)) {
-          return true;
+          penalty += 10;
+          showScorePenalty("-10");
+          animateCrash(player);
+          updateScore();
+          scene.remove(obs);
+          obstacles.splice(i, 1);
         }
       }
-      return false;
     }
 
     // ----------------------
-    // Update score based on player's z position and collected coins
+    // Update score based on player's position, coins, and penalty
     // ----------------------
     function updateScore() {
       score = Math.floor(player.position.z) + coinBonus;
-      document.getElementById("score").textContent = "Score: " + score;
+      effectiveScore = score - penalty;
+      document.getElementById("score").textContent = "Score: " + effectiveScore;
     }
 
     // ----------------------
     // Update high score if needed
     // ----------------------
     function updateHighScore() {
-      if (score > highScore) {
-        highScore = score;
+      if (effectiveScore > highScore) {
+        highScore = effectiveScore;
       }
       document.getElementById("highScore").textContent = "High Score: " + highScore;
     }
@@ -656,44 +689,35 @@
       if (gameOver) return;
       animationId = requestAnimationFrame(animate);
 
-      // Move player
-
       const absoluteForwardTiltInDegrees = Math.abs(currentTilt.y * (180 / Math.PI));
-
       if (absoluteForwardTiltInDegrees <= forwardTiltLowerBound) {
-        speedPercent = 1.0
+        speedPercent = 1.0;
       } else if (absoluteForwardTiltInDegrees > forwardTiltUpperBound) {
-        speedPercent = 0.0
+        speedPercent = 0.0;
       } else {
-        const currDifference = Math.abs(absoluteForwardTiltInDegrees - forwardTiltUpperBound)
-        speedPercent = currDifference / (forwardTiltUpperBound - forwardTiltLowerBound)
-        console.log(speedPercent)
+        const currDifference = Math.abs(absoluteForwardTiltInDegrees - forwardTiltUpperBound);
+        speedPercent = currDifference / (forwardTiltUpperBound - forwardTiltLowerBound);
       }
-
       playerSpeed = basePlayerSpeed * speedPercent;
-
       player.position.z += playerSpeed;
-
       const tiltInDegrees = -currentTilt.x * (180 / Math.PI);
       player.position.x += tiltInDegrees * lateralSpeedFactor * speedPercent;
 
-      // 1) First, let the camera follow the player
       camera.position.z = player.position.z - 10;
       camera.position.x = player.position.x;
       camera.lookAt(player.position.x, player.position.y, player.position.z);
-      
-      // 2) Check for special segments (bridge, curvedRoad, etc.)
+
       for (let seg of roadSegments) {
         const data = seg.userData;
         if (!data) continue;
-        
-        // If the player is within the z-range of this segment...
         if (player.position.z >= data.zStart && player.position.z <= data.zEnd) {
-          segmentTypes[data.segmentType].handleCollisions(data);
+          if (segmentTypes[data.segmentType] && segmentTypes[data.segmentType].handleCollisions) {
+            segmentTypes[data.segmentType].handleCollisions(data);
+          }
         }
       }
 
-      // 3) Rotate coins and check for coin collection using a spherical hitbox
+      // Rotate coins and check for collection
       const playerBox = new THREE.Box3().setFromObject(player);
       for (let i = coins.length - 1; i >= 0; i--) {
         coins[i].rotation.z += 0.05;
@@ -705,21 +729,21 @@
         }
       }
 
-      // 4) Spawn more road if needed
       if (player.position.z + spawnDistance > spawnZ) {
         spawnChunk(spawnZ);
       }
 
-      // 5) Check collisions with obstacles
-      if (checkCollisions()) {
-        endGame();
-      }
-
-      // 6) Update score and render
+      checkCollisions();
       updateScore();
+
+      const elapsed = performance.now() - gameStartTime;
+      if (elapsed >= gameDuration) {
+        endGame();
+        return;
+      }
+      updateStopwatch();
       renderer.render(scene, camera);
     }
-
 
     // ----------------------
     // End the game
@@ -747,7 +771,9 @@
       roadSegments = [];
       coins = [];
       coinBonus = 0;
-      // Hide game over UI and trigger countdown before re‑initializing
+      penalty = 0;
+      score = 0;
+      effectiveScore = 0;
       document.getElementById("gameOver").style.display = "none";
       document.getElementById("restartGameBtn").style.display = "none";
       startCountdown(init);
@@ -820,32 +846,26 @@
       };
     });
 
-    const REQUIRED_DURATION = 3000; // 3 seconds in milliseconds
+    const REQUIRED_DURATION = 3000;
     let yThresholdStartTime = null;
 
     function detectGesture(tilt) {
-      // Only run this when startGameBtn is visible
       if(document.getElementById("gameOver").style.display == "none"){
         return;
       }
-      
       if (tilt.y > 0.5) {
-        // If this is the first time y is > 0.5, record the start time
         if (yThresholdStartTime === null) {
           yThresholdStartTime = Date.now();
           console.log("Y threshold exceeded, starting timer...");
         } else {
-          // Check how long we've been above threshold
           const elapsedTime = Date.now() - yThresholdStartTime;
           console.log(`Y threshold maintained for ${(elapsedTime/1000).toFixed(1)} seconds`);
-          
           if (elapsedTime >= REQUIRED_DURATION) {
             console.log("3 seconds threshold reached! Starting game.");
             document.getElementById("startGameBtn").click();
           }
         }
       } else {
-        // Reset the timer if y drops below threshold
         if (yThresholdStartTime !== null) {
           console.log("Y value dropped below threshold, resetting timer");
           yThresholdStartTime = null;
@@ -857,14 +877,12 @@
     // Start Game on Button Click (with countdown)
     // ----------------------
     document.getElementById("startGameBtn").addEventListener("click", function() {
-      // Ensure player name is set
       const inputName = document.getElementById("playerNameInput").value.trim();
       if (!inputName) {
         alert("Please enter a player name before starting the game.");
         return;
       }
-      playerName = inputName; // Save to global variable
-      
+      playerName = inputName;
       const imuId = document.getElementById("imuIdInput").value.trim();
       if (!imuId) {
         alert("Please enter an IMU ID before starting the game.");
@@ -877,14 +895,10 @@
       startCountdown(init);
     });
 
-    // Restart button click listener
     document.getElementById("restartGameBtn").addEventListener("click", function() {
       restartGame();
     });
     
-    // ----------------------
-    // Automatically connect if "id" query parameter is present
-    // ----------------------
     (function() {
       const urlParams = new URLSearchParams(window.location.search);
       const autoImuId = urlParams.get('id');
