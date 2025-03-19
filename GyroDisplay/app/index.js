@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DeviceMotion } from "expo-sensors";
 
 const { width, height } = Dimensions.get("window");
-const CIRCLE_RADIUS = height * 0.28; // Adjusted for landscape mode
+const CIRCLE_RADIUS = height * 0.2; // Adjusted for landscape mode
 const BALL_RADIUS = 10;
 
 // WebSocket connection constants
