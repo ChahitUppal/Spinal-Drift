@@ -90,7 +90,7 @@ export default function App() {
   // WebSocket connection function
   const _connectWebSocket = () => {
     try {
-      const wsUrl = `wss://${WS_HOST}/api/ws/imu/${imuId}/upload/`;
+      const wsUrl = `wss://${WS_HOST}/imu_racing_game/api/ws/imu/${imuId}/upload/`;
       console.log(`Connecting to WebSocket: ${wsUrl}`);
       
       // Close existing connection if any
@@ -308,7 +308,7 @@ export default function App() {
         </View>
       )}
       
-      <Text style={styles.title}>Spine Rehab</Text>
+      <Text style={styles.title}>IMU App</Text>
       
       <View style={styles.horizontalContainer}>
         <View style={styles.leftPanel}>

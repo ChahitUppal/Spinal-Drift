@@ -428,10 +428,10 @@
     function updateStopwatch() {
       let elapsedMs = performance.now() - gameStartTime;
       let totalSec = Math.floor(elapsedMs / 1000);
-      let minutes = Math.floor(totalSec / 60);
-      let seconds = totalSec % 60;
-      let secondsStr = (seconds < 10) ? ("0" + seconds) : seconds;
-      document.getElementById("stopwatch").textContent = "Time: " + minutes + ":" + secondsStr;
+        let minutes = Math.floor(totalSec / 60);
+        let seconds = totalSec % 60;
+        let secondsStr = (seconds < 10) ? ("0" + seconds) : seconds;
+        document.getElementById("stopwatch").textContent = "Time: " + minutes + ":" + secondsStr;
     }
 
     // ----------------------
@@ -920,7 +920,7 @@
         alert("Please enter an IMU ID.");
         return;
       }
-      const wsUrl = `wss://personal-site-oi5a.onrender.com/api/ws/imu/${imuId}/broadcast/`;
+      const wsUrl = `wss://personal-site-oi5a.onrender.com/imu_racing_game/api/ws/imu/${imuId}/broadcast/`;
       console.log("Connecting to", wsUrl);
       if (socket) {
         socket.close();
