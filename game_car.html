@@ -165,6 +165,7 @@
     let gameDuration = 0;
     let gameStartTime = 0;
     let penalty = 0;
+    let totalDistance = 0;
     let effectiveScore = 0;
     let bridgePenaltyActive = false;
     
@@ -417,13 +418,16 @@
   }, 30);
 }
 
-    function rewindPlayerBehindBridge(segData) {
-      const behindDist = 15;
-      let behindZ = segData.zStart - behindDist;
-      if (behindZ < 0) behindZ = 0;
-      player.position.x = (segData.bridgeXMin + segData.bridgeXMax) / 2;
-      player.position.z = behindZ;
-    }
+  function rewindPlayerBehindBridge(segData) {
+    // Reset X and Y, and reset Z to a safe location,
+    // but DO NOT reset totalDistance.
+    const behindDist = 20; // adjust as needed
+    let newZ = segData.zStart - behindDist;
+    if (newZ < 0) newZ = 0;
+    player.position.x = (segData.bridgeXMin + segData.bridgeXMax) / 2;
+    player.position.y = 0; // reset Y as well
+    player.position.z = newZ;
+  }
 
     function updateStopwatch() {
       let elapsedMs = performance.now() - gameStartTime;
@@ -765,7 +769,7 @@
     // Update score based on player's position, coins, and penalty
     // ----------------------
     function updateScore() {
-      score = Math.floor(player.position.z) + coinBonus;
+      score = Math.floor(totalDistance) + coinBonus;
       effectiveScore = score - penalty;
       document.getElementById("score").textContent = "Score: " + effectiveScore;
     }
@@ -802,7 +806,8 @@
       player.position.z += playerSpeed;
       const tiltInDegrees = -currentTilt.x * (180 / Math.PI);
       player.position.x += tiltInDegrees * lateralSpeedFactor * speedPercent;
-
+      player.position.z += playerSpeed;
+      totalDistance += playerSpeed;
       camera.position.z = player.position.z - 10;
       camera.position.x = player.position.x;
       camera.lookAt(player.position.x, player.position.y, player.position.z);
@@ -879,6 +884,7 @@
       penalty = 0;
       score = 0;
       effectiveScore = 0;
+      totalDistance = 0;
       document.getElementById("gameOver").style.display = "none";
       document.getElementById("restartGameBtn").style.display = "none";
       startCountdown(init);
@@ -971,6 +977,7 @@
           if (elapsedTime >= REQUIRED_DURATION) {
             console.log("3 seconds threshold reached! Starting game.");
             document.getElementById("startGameBtn").click();
+            delay(5000);
           }
         }
       } else {
