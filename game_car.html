@@ -134,10 +134,10 @@
   <div id="timePanel">
     <label for="gameTimeSelect">Select Game Duration:</label>
     <select id="gameTimeSelect">
-      <option value="30000">30 Seconds</option>
-      <option value="60000">1 Minute</option>
-      <option value="120000">2 Minutes</option>
-      <option value="180000">3 Minutes</option>
+      <option value="31000">30 Seconds</option>
+      <option value="61000">1 Minute</option>
+      <option value="121000">2 Minutes</option>
+      <option value="181000">3 Minutes</option>
     </select>
   </div>
  
@@ -429,14 +429,22 @@
     player.position.z = newZ;
   }
 
-    function updateStopwatch() {
-      let elapsedMs = performance.now() - gameStartTime;
-      let totalSec = Math.floor(elapsedMs / 1000);
-        let minutes = Math.floor(totalSec / 60);
-        let seconds = totalSec % 60;
-        let secondsStr = (seconds < 10) ? ("0" + seconds) : seconds;
-        document.getElementById("stopwatch").textContent = "Time: " + minutes + ":" + secondsStr;
-    }
+  function updateStopwatch() {
+    // Calculate elapsed time in ms
+    let elapsedMs = performance.now() - gameStartTime;
+    // Calculate remaining time (ensure it's not negative)
+    let remainingMs = gameDuration - elapsedMs;
+    if (remainingMs < 0) remainingMs = 0;
+    
+    // Convert remaining time to seconds, then minutes & seconds
+    let totalSec = Math.floor(remainingMs / 1000);
+    let minutes = Math.floor(totalSec / 60);
+    let seconds = totalSec % 60;
+    let secondsStr = seconds < 10 ? "0" + seconds : seconds;
+    
+    document.getElementById("stopwatch").textContent = "Time: " + minutes + ":" + secondsStr;
+  }
+
 
     // ----------------------
     // Segment definitions.
@@ -654,8 +662,8 @@
         handleCollisions(data) {
           if (player.position.x < data.bridgeXMin || player.position.x > data.bridgeXMax) {
             if (!bridgePenaltyActive) {
-              penalty += 20;
-              showScorePenalty("-20");
+              penalty += 5;
+              showScorePenalty("-5");
               rewindPlayerBehindBridge(data);
               updateScore();
               bridgePenaltyActive = true;
@@ -755,8 +763,8 @@
         const obs = obstacles[i];
         const obsBox = new THREE.Box3().setFromObject(obs);
         if (playerBox.intersectsBox(obsBox)) {
-          penalty += 10;
-          showScorePenalty("-10");
+          penalty += 2;
+          showScorePenalty("-2");
           animateCrash(player);
           updateScore();
           scene.remove(obs);
@@ -769,7 +777,7 @@
     // Update score based on player's position, coins, and penalty
     // ----------------------
     function updateScore() {
-      score = Math.floor(totalDistance) + coinBonus;
+      score = Math.floor(totalDistance/20) + coinBonus;
       effectiveScore = score - penalty;
       document.getElementById("score").textContent = "Score: " + effectiveScore;
     }
@@ -828,13 +836,13 @@
         coins[i].rotation.z += 0.05;
         const coinSphere = new THREE.Sphere(coins[i].position, 0.5);
         if (playerBox.intersectsSphere(coinSphere)) {
-          showScoreIncrease("+20");
+          showScoreIncrease("+1");
           const coinSound = new Audio('coin.mp3');
           coinSound.currentTime = 0; // Reset time to allow quick replay
           coinSound.play();
           scene.remove(coins[i]);
           coins.splice(i, 1);
-          coinBonus += 10;
+          coinBonus += 1;
         }
       }
 
