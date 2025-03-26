@@ -525,9 +525,38 @@
             }
           }
         },
-        handleCollisions(data) {
-          if (player.position.x < -roadWidth / 2) player.position.x = -roadWidth / 2;
-          if (player.position.x > roadWidth / 2) player.position.x = roadWidth / 2;
+        handleCollisions: function(data) {
+          // Only process if player's Z is within this segment
+          if (player.position.z >= data.zStart && player.position.z <= data.zEnd) {
+            // Ensure we have a global timer
+            if (!window.lastStraightPenaltyTime) {
+              window.lastStraightPenaltyTime = 0;
+            }
+
+            // If the car is beyond the left boundary, clamp + penalty -1 (but only if 500ms have passed)
+            if (player.position.x < -roadWidth / 2) {
+              player.position.x = -roadWidth / 2;
+              let now = performance.now();
+              if (now - window.lastStraightPenaltyTime >= 300) {
+                penalty += 1;  // single event penalty
+                showScorePenalty("-1");
+                updateScore();
+                window.lastStraightPenaltyTime = now;
+              }
+            }
+
+            // If the car is beyond the right boundary, clamp + penalty -1
+            if (player.position.x > roadWidth / 2) {
+              player.position.x = roadWidth / 2;
+              let now = performance.now();
+              if (now - window.lastStraightPenaltyTime >= 300) {
+                penalty += 1;
+                showScorePenalty("-1");
+                updateScore();
+                window.lastStraightPenaltyTime = now;
+              }
+            }
+          }
         }
       },
       curvedRoad: {
@@ -608,71 +637,228 @@
           roadSegments.push(rightLine);
           roadSegments.push(middleLine);
           for (let i = 0; i < numPoints; i++) {
-            if (Math.random() < 0.3) {
-              const coin = createCoin();
-              coin.position.copy(middleCurvePoints[i]);
-              coin.position.y += 0.5;
-              scene.add(coin);
-              coins.push(coin);
+            let r = Math.random();
+            // Blue coin: appears at the middle of the curved path (value +5)
+            if (r < 0.2) {
+              const coin_gold = createCoin();
+              coin_gold.material.color.set("#FFD700"); // gold
+              coin_gold.userData.value = 3;
+              coin_gold.position.copy(middleCurvePoints[i]);
+              coin_gold.position.y += 0.5;
+              scene.add(coin_gold);
+              coins.push(coin_gold);
+
+            // Gold coin: appears further to the left/right (value +2)
+              const coin_silver = createCoin();
+              coin_silver.material.color.set("#C0C0C0"); // silver
+              coin_silver.userData.value = 2;
+              // Offset by ±2.5 from the middle
+              offset1 = (Math.random() < 0.5 ? -4 : 4);
+              coin_silver.position.copy(middleCurvePoints[i]);
+              coin_silver.position.x += offset1;
+              coin_silver.position.y += 0.5;
+              scene.add(coin_silver);
+              coins.push(coin_silver);
+
+            // Copper coin: appears near the edges (value +1)
+              const coin_copper = createCoin();
+              coin_copper.material.color.set("#B87333"); // copper color
+              coin_copper.userData.value = 1;
+              // Offset by ±4 from the middle (placing it near the edge but not exactly at border)
+              offset2 = (Math.random() < 0.5 ? -8 : 8);
+              coin_copper.position.copy(middleCurvePoints[i]);
+              coin_copper.position.x += offset2;
+              coin_copper.position.y += 0.5;
+              scene.add(coin_copper);
+              coins.push(coin_copper);
             }
           }
         },
-        handleCollisions(data) {
-          const segLength = data.segmentLength;
-          const t = (player.position.z - data.zStart) / segLength;
-          const centerX = (data.waveWidth * roadWidth * 0.5) * Math.sin(t * data.wavePeriod * 2 * Math.PI);
-          const minX = centerX - (roadWidth / 2);
-          const maxX = centerX + (roadWidth / 2);
-          if (player.position.x < minX) player.position.x = minX;
-          if (player.position.x > maxX) player.position.x = maxX;
+        handleCollisions: function(data) {
+          // Only process if player's Z is within this segment
+          if (player.position.z >= data.zStart && player.position.z <= data.zEnd) {
+            if (!window.lastCurvedPenaltyTime) {
+              window.lastCurvedPenaltyTime = 0;
+            }
+
+            // figure out the dynamic left/right boundaries
+            const segLength = data.segmentLength;
+            const t = (player.position.z - data.zStart) / segLength;
+            const centerX = (data.waveWidth * roadWidth * 0.5) * Math.sin(t * data.wavePeriod * 2 * Math.PI);
+            const minX = centerX - (roadWidth / 2);
+            const maxX = centerX + (roadWidth / 2);
+
+            // If car is beyond left boundary, clamp + penalty -2 every 500ms
+            if (player.position.x < minX) {
+              player.position.x = minX;
+              let now = performance.now();
+              if (now - window.lastCurvedPenaltyTime >= 300) {
+                penalty += 2;
+                showScorePenalty("-2");
+                updateScore();
+                window.lastCurvedPenaltyTime = now;
+              }
+            }
+
+            // If car is beyond right boundary, clamp + penalty -2
+            if (player.position.x > maxX) {
+              player.position.x = maxX;
+              let now = performance.now();
+              if (now - window.lastCurvedPenaltyTime >= 300) {
+                penalty += 2;
+                showScorePenalty("-2");
+                updateScore();
+                window.lastCurvedPenaltyTime = now;
+              }
+            }
+          }
         }
+
       },
       bridge: {
-        length: 40,
+        length: 80,
         spawn: function(zStart, length) {
-          const waterGeometry = new THREE.PlaneGeometry(roadWidth * 2, length);
-          const waterMaterial = new THREE.MeshPhongMaterial({ color: 0x1e90ff });
-          const waterPlane = new THREE.Mesh(waterGeometry, waterMaterial);
-          waterPlane.rotation.x = -Math.PI / 2;
-          waterPlane.position.z = zStart + length / 2;
-          waterPlane.position.y = -0.1;
-          scene.add(waterPlane);
-          roadSegments.push(waterPlane);
-          const bridgeWidth = roadWidth / 5;
-          const minX = -roadWidth/2 + bridgeWidth/2;
-          const maxX = roadWidth/2 - bridgeWidth/2;
-          const bridgeCenterX = Math.random() * (maxX - minX) + minX;
-          const bridgeGeometry = new THREE.PlaneGeometry(bridgeWidth, length);
-          const bridgeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
-          const bridge = new THREE.Mesh(bridgeGeometry, bridgeMaterial);
-          bridge.rotation.x = -Math.PI / 2;
-          bridge.position.set(bridgeCenterX, 0.01, zStart + length / 2);
-          scene.add(bridge);
-          roadSegments.push(bridge);
-          bridge.userData = {
+          // Main 20-wide road plane (light gray)
+          const geometry = new THREE.PlaneGeometry(20, length);
+          const material = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
+          const cautionRoad = new THREE.Mesh(geometry, material);
+          cautionRoad.rotation.x = -Math.PI / 2;
+          cautionRoad.position.z = zStart + length / 2;
+          scene.add(cautionRoad);
+          roadSegments.push(cautionRoad);
+
+          // We'll place horizontal stripes from X=±2 outward in four zones:
+          // zone1: X from ±2..±4, zone2: ±4..±6, zone3: ±6..±8, zone4: ±8..±10
+          // Each zone has black/yellow stripes. The further the zone, the denser the stripes.
+          // We'll define a helper to spawn horizontal stripes in a given zone range.
+          function spawnHorizontalStripes(xMin, xMax, stripeCount, color1, color2) {
+            // We create 'stripeCount' horizontal stripes, alternating color1/color2
+            let zoneWidth = Math.abs(xMax - xMin);
+            let stripeHeight = length / stripeCount;
+            for (let i = 0; i < stripeCount; i++) {
+              const stripeGeom = new THREE.PlaneGeometry(zoneWidth, stripeHeight);
+              // alternate color by i % 2
+              const stripeMat = new THREE.MeshPhongMaterial({ color: (i % 2 === 0 ? color1 : color2) });
+              const stripe = new THREE.Mesh(stripeGeom, stripeMat);
+              stripe.rotation.x = -Math.PI / 2;
+
+              // position it horizontally in the middle of [xMin, xMax]
+              stripe.position.x = (xMin + xMax) / 2;
+              // position it vertically along Z
+              stripe.position.z = zStart + ((i + 0.5) * stripeHeight);
+              stripe.position.y = 0.01;
+              scene.add(stripe);
+              roadSegments.push(stripe);
+            }
+          }
+
+          // zone1 => ±2..±4, e.g. 12 stripes
+          spawnHorizontalStripes(2, 4, 12, 0x000000, 0xffff00);
+          spawnHorizontalStripes(-4, -2, 12, 0x000000, 0xffff00);
+
+          // zone2 => ±4..±6 => 14 stripes
+          spawnHorizontalStripes(4, 6, 14, 0x000000, 0xffff00);
+          spawnHorizontalStripes(-6, -4, 14, 0x000000, 0xffff00);
+
+          // zone3 => ±6..±8 => 16 stripes
+          spawnHorizontalStripes(6, 8, 16, 0x000000, 0xffff00);
+          spawnHorizontalStripes(-8, -6, 16, 0x000000, 0xffff00);
+
+          // zone4 => ±8..±10 => 18 stripes
+          spawnHorizontalStripes(8, 10, 18, 0x000000, 0xffff00);
+          spawnHorizontalStripes(-10, -8, 18, 0x000000, 0xffff00);
+
+          // Store safe zone boundaries, etc.
+          cautionRoad.userData = {
             segmentType: "bridge",
             isBridge: true,
-            bridgeXMin: bridgeCenterX - bridgeWidth/2,
-            bridgeXMax: bridgeCenterX + bridgeWidth/2,
+            zone1: 4,
+            zone2: 6,
+            zone3: 8,
+            zone4: 10,
             segmentLength: length,
             zStart: zStart,
             zEnd: zStart + length
           };
         },
-        handleCollisions(data) {
-          if (player.position.x < data.bridgeXMin || player.position.x > data.bridgeXMax) {
-            if (!bridgePenaltyActive) {
-              penalty += 5;
-              showScorePenalty("-5");
-              rewindPlayerBehindBridge(data);
-              updateScore();
-              bridgePenaltyActive = true;
+
+        handleCollisions: function(data) {
+          // Only process if player's Z is within this segment
+          if (player.position.z >= data.zStart && player.position.z <= data.zEnd) {
+
+            // If first time in segment, reinit penalty timer
+            if (!window.lastPenaltySegment || window.lastPenaltySegment !== data) {
+              window.lastPenaltySegment = data;
+              window.lastPenaltyUpdate = performance.now();
+              window.offTrackTime = 0;
+              // ADD a timer for on-track reward
+              window.onTrackTime = 0;
+            }
+
+            // clamp X to ±10 so we never leave the road
+            if (player.position.x < -10) player.position.x = -10;
+            if (player.position.x >  10) player.position.x =  10;
+
+            // figure out how far from center ±2 => zone1 => zone2 => zone3 => zone4
+            let now = performance.now();
+            let deltaTime = now - window.lastPenaltyUpdate; // ms
+            window.lastPenaltyUpdate = now;
+            let distFromSafe = 0; 
+            // safe zone is ±2, if outside ±2 => distFromSafe = how far from ±2
+            if (player.position.x > 2) {
+              distFromSafe = player.position.x - 2;
+            } else if (player.position.x < -2) {
+              distFromSafe = Math.abs(player.position.x) - 2;
+            }
+
+            // if distFromSafe <= 0 => no penalty => accumulate onTrackTime
+            if (distFromSafe <= 0) {
+              // car is in safe zone => reward +1 for each 500 ms
+              window.onTrackTime += deltaTime;
+              while (window.onTrackTime >= 350) {
+                // add points
+                coinBonus += 1;
+                showScoreIncrease("+1");
+                updateScore();
+                window.onTrackTime -= 350;
+              }
+              // reset offTrackTime
+              window.offTrackTime = 0;
             } else {
-              bridgePenaltyActive = false;
+              // if distFromSafe > 0 => existing logic for penalty
+              window.offTrackTime = (window.offTrackTime || 0) + deltaTime;
+
+              // figure out penalty rate based on zone
+              let rate = 0;
+              if (distFromSafe < 2) rate = 1;       // zone1 => ±4
+              else if (distFromSafe < 4) rate = 2;  // zone2 => ±6
+              else if (distFromSafe < 6) rate = 3;  // zone3 => ±8
+              else rate = 4;                        // zone4 => ±10
+
+              // for each full ms off track => penalty += rate
+              while (window.offTrackTime >= 250) {
+                penalty += rate;
+                showScorePenalty("-" + rate);
+                updateScore();
+                window.offTrackTime -= 250;
+              }
+              // reset onTrackTime
+              window.onTrackTime = 0;
+            }
+
+          } else {
+            // if not in this segment => reset so next time we reenter, we init
+            if (window.lastPenaltySegment === data) {
+              window.lastPenaltySegment = null;
+              window.lastPenaltyUpdate = null;
+              window.offTrackTime = 0;
+              window.onTrackTime = 0;
             }
           }
         }
       }
+
+
     };
 
     // ----------------------
@@ -684,9 +870,9 @@
         segmentType = "straightRoad";
       } else {
         const rand = Math.random();
-        if (rand < 0.2) {
+        if (rand < 0.15) {
           segmentType = "bridge";
-        } else if (rand < 0.5) {
+        } else if (rand < 0.35) {
           segmentType = "curvedRoad";
         } else {
           segmentType = "straightRoad";
@@ -836,15 +1022,17 @@
         coins[i].rotation.z += 0.05;
         const coinSphere = new THREE.Sphere(coins[i].position, 0.5);
         if (playerBox.intersectsSphere(coinSphere)) {
-          showScoreIncrease("+1");
+          // Use the coin's stored value (default to 1 if not set)
+          const coinValue = coins[i].userData.value || 1;
+          showScoreIncrease((coinValue > 0 ? "+" : "") + coinValue);
           const coinSound = new Audio('coin.mp3');
-          coinSound.currentTime = 0; // Reset time to allow quick replay
+          coinSound.currentTime = 0;
           coinSound.play();
           scene.remove(coins[i]);
           coins.splice(i, 1);
-          coinBonus += 1;
+          coinBonus += coinValue;
         }
-      }
+}
 
       if (player.position.z + spawnDistance > spawnZ) {
         spawnChunk(spawnZ);
