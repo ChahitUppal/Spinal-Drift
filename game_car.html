@@ -124,31 +124,62 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-  <audio id="audio"></audio>
-  <div id="score">Score: 0</div>
-  <div id="highScore">High Score: 0</div>
   <div id="gameOver">Game Over</div>
-  <div id="countdown"></div>
-  <div id="scoreChange"></div>
-  <div id="stopwatch">Time: 0:00</div>
-  <div id="timePanel">
-    <label for="gameTimeSelect">Select Game Duration:</label>
-    <select id="gameTimeSelect">
-      <option value="31000">30 Seconds</option>
-      <option value="61000">1 Minute</option>
-      <option value="121000">2 Minutes</option>
-      <option value="181000">3 Minutes</option>
-    </select>
-  </div>
- 
-  <div id="imuPanel">
-    <label for="imuIdInput">Enter IMU ID:</label>
-    <input type="text" id="imuIdInput" placeholder="e.g., my_imu_id" />
-    <button id="connectBtn">Connect</button>
-  </div>
-  <button id="startGameBtn">Start Game</button>
+  <div id="countdown" style="display: none;"></div>
+  <audio id="audio"></audio>
   <button id="restartGameBtn">Restart</button>
+  <div id="score" style="display:none;">Score: 0</div>
+  <div id="scoreChange"></div>
+  <div id="highScore" style="display:none;">High Score: 0</div>
+  <div id="stopwatch" style="display:none;">Time: 0:00</div>
+
+    <!-- NEW: Menu Screen Overlay -->
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+  <div id="menuScreen" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('menu_wallpaper.jpg') no-repeat center center; background-size: cover; z-index: 2;">
+    <h1 id="gameTitle" style="text-align: center; color: #FFFFFF; font-size: 88px; margin-top: 20%; font-family: 'Playfair Display', cursive, sans-serif;, sans-serif; text-shadow: 0 0 5px #000000, 0 0 10px #000000;">
+      Spinal Drift
+    </h1>     
+    <div style="position: absolute; top: 10px; right: 10px; text-align: right;">
+      <div>
+        <label for="imuIdInput">Enter IMU ID:</label>
+        <input type="text" id="imuIdInput" placeholder="e.g., my_imu_id" />
+        <button id="connectBtn" type="button">Connect</button>
+      </div>
+      <div style="margin-top: 10px;">
+        <label for="gameTimeSelect">Select Game Duration:</label>
+        <select id="gameTimeSelect">
+          <option value="31000">30 Seconds</option>
+          <option value="61000">1 Minute</option>
+          <option value="121000">2 Minutes</option>
+          <option value="181000">3 Minutes</option>
+        </select>
+      </div>
+    </div>
   
+    <div style="text-align: center; margin-top: 20px;">
+      <label for="vehicleColor">Choose your vehicle color:</label>
+      <input type="color" id="vehicleColor" value="#0000ff">
+    </div>
+    <div style="text-align: center; margin-top: 20px;">
+      <button id="howToPlayBtn">How to Play</button>
+      <button id="startGameMenuBtn" style="margin-left: 20px;" type="button">Start Game</button>
+    </div>
+    <!-- How to Play Overlay -->
+    <div id="howToPlayOverlay" style="display:none; position: absolute; top: 10%; left: 10%; width:80%; height:80%; background: rgba(0,0,0,0.8); color: white; padding:20px; overflow: auto; z-index:3;">
+      <h2>How to Play</h2>
+      <ol>
+        <li><strong>Steer with Tilt:</strong> Tilt your device to control the car’s direction.</li>
+        <li><strong>Avoid Obstacles:</strong> Stay clear of parked cars and other hazards. If you leave the road boundaries, you will incur penalties.</li>
+        <li><strong>Collect Coins:</strong> Coins are scattered along the road. Collect them to earn bonus points.</li>
+        <li><strong>Handle Curves & Bridges:</strong> Some road segments curve or feature bridges. Adjust your tilt to maintain control and stay on track.</li>
+        <li><strong>Score Calculation:</strong> Your score increases with distance traveled and coins collected but decreases with penalties for off-track driving or collisions.</li>
+        <li><strong>Game Duration:</strong> Select your desired game duration from the menu before starting.</li>
+        <li><strong>Crash and Penalties:</strong> Collisions with obstacles result in a crash and loss of points. Drive carefully!</li>
+      </ol>
+      <button id="closeHowToPlay" type="button">Close</button>      
+    </div>
+  </div>
+
   <script>
     // ----------------------
     // Global Game Variables
@@ -417,18 +448,6 @@
     }
   }, 30);
 }
-
-  function rewindPlayerBehindBridge(segData) {
-    // Reset X and Y, and reset Z to a safe location,
-    // but DO NOT reset totalDistance.
-    const behindDist = 20; // adjust as needed
-    let newZ = segData.zStart - behindDist;
-    if (newZ < 0) newZ = 0;
-    player.position.x = (segData.bridgeXMin + segData.bridgeXMax) / 2;
-    player.position.y = 0; // reset Y as well
-    player.position.z = newZ;
-  }
-
   function updateStopwatch() {
     // Calculate elapsed time in ms
     let elapsedMs = performance.now() - gameStartTime;
@@ -892,6 +911,8 @@
       if (renderer && renderer.domElement) {
         document.body.removeChild(renderer.domElement);
       }
+      var carColor = window.selectedCarColor;
+      player = createCartoonCar(carColor);
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -906,8 +927,8 @@
       scene.add(ambientLight);
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(0, 50, -50);
+      player = createCartoonCar(carColor);
       scene.add(directionalLight);
-      player = createCartoonCar(0x0000ff);
       player.position.set(0, 0, 0);
       scene.add(player);
       spawnZ = 0;
@@ -1171,7 +1192,6 @@
           const elapsedTime = Date.now() - yThresholdStartTime;
           console.log(`Y threshold maintained for ${(elapsedTime/1000).toFixed(1)} seconds`);
           if (elapsedTime >= REQUIRED_DURATION) {
-            console.log("3 seconds threshold reached! Starting game.");
             document.getElementById("startGameBtn").click();
             delay(5000);
           }
@@ -1183,22 +1203,6 @@
         }
       }
     }
-
-    // ----------------------
-    // Start Game on Button Click (with countdown)
-    // ----------------------
-    document.getElementById("startGameBtn").addEventListener("click", function() {
-      const imuId = document.getElementById("imuIdInput").value.trim();
-      if (!imuId) {
-        alert("Please enter an IMU ID before starting the game.");
-        return;
-      }
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        document.getElementById("connectBtn").click();
-      }
-      this.style.display = "none";
-      startCountdown(init);
-    });
 
     document.getElementById("restartGameBtn").addEventListener("click", function() {
       restartGame();
@@ -1212,6 +1216,37 @@
         document.getElementById("connectBtn").click();
       }
     })();
+
+    // NEW: How To Play overlay toggle
+    document.getElementById("howToPlayBtn").addEventListener("click", function() {
+      document.getElementById("howToPlayOverlay").style.display = "block";
+    });
+
+    document.getElementById("closeHowToPlay").addEventListener("click", function() {
+      document.getElementById("howToPlayOverlay").style.display = "none";
+    });
+
+    document.getElementById("startGameMenuBtn").addEventListener("click", function() {
+      const chosenColor = document.getElementById("vehicleColor").value;
+      // Store the selected color in a global variable for use in init():
+      window.selectedCarColor = parseInt(chosenColor.replace("#", "0x"));
+      document.getElementById("menuScreen").style.display = "none";
+      // Show game HUD elements (score, highScore, stopwatch)
+      document.getElementById("score").style.display = "block";
+      document.getElementById("highScore").style.display = "block";
+      document.getElementById("stopwatch").style.display = "block";
+      // Instead of clicking a hidden button, start the game directly:
+      startCountdown(init);
+    });
+
+    // NEW: Update title color when vehicle color is changed
+    document.getElementById("vehicleColor").addEventListener("input", function() {
+    document.getElementById("gameTitle").style.color = this.value;
+    // Optionally, update text shadow for a stronger glow effect matching the chosen color:
+    //document.getElementById("gameTitle").style.textShadow = `0 0 5px ${this.value}, 0 0 10px ${this.value}`;
+  });
+
+
   </script>
 </body>
 </html>
