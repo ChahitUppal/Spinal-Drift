@@ -41,8 +41,9 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      color: red;
-      font-size: 48px;
+      color: #ff0000;
+      font-size: 60px;
+      font-weight: bold;
       display: none;
       z-index: 1;
     }
@@ -128,6 +129,7 @@
   <div id="countdown" style="display: none;"></div>
   <audio id="audio"></audio>
   <button id="restartGameBtn">Restart</button>
+  <button id="homeBtn" type="button" style="position: absolute; top: 70px; left: 10px; padding: 5px 10px; font-size: 16px; z-index: 1; display: none;">Home</button>
   <div id="score" style="display:none;">Score: 0</div>
   <div id="scoreChange"></div>
   <div id="highScore" style="display:none;">High Score: 0</div>
@@ -185,6 +187,7 @@
     // Global Game Variables
     // ----------------------
     let scene, camera, renderer;
+    let isPaused = false;
     let player;                // The player's car (Group object)
     let obstacles = [];        // Array of obstacle (parked) cars
     let coins = [];            // Array of collectible coins
@@ -1079,8 +1082,15 @@
       gameOver = true;
       cancelAnimationFrame(animationId);
       updateHighScore();
+      const overlay = document.getElementById("gameOver");
+      overlay.textContent = "Game Over";
+      overlay.style.color = "#ff0000";
+      overlay.style.fontWeight = "bold";
+      overlay.style.fontSize = "60px";
+      overlay.style.display = "block";
       document.getElementById("gameOver").style.display = "block";
       document.getElementById("restartGameBtn").style.display = "block";
+      document.getElementById("homeBtn").style.display = "block";
     }
 
     // ----------------------
@@ -1208,6 +1218,11 @@
       restartGame();
     });
     
+    document.getElementById("homeBtn").addEventListener("click", function() {
+      window.location.reload();
+    });
+
+
     (function() {
       const urlParams = new URLSearchParams(window.location.search);
       const autoImuId = urlParams.get('id');
@@ -1246,7 +1261,34 @@
     //document.getElementById("gameTitle").style.textShadow = `0 0 5px ${this.value}, 0 0 10px ${this.value}`;
   });
 
-
+  document.addEventListener("keydown", function(e) {
+    if (gameOver) return;  // Do not allow pausing/resuming after game over
+    if (e.code === "Space") {
+      if (!isPaused) {
+        isPaused = true;
+        cancelAnimationFrame(animationId);
+        // Display "Paused" with bold white styling and different size
+        const overlay = document.getElementById("gameOver");
+        overlay.textContent = "Paused";
+        overlay.style.display = "block";
+        overlay.style.color = "#ffffff";
+        overlay.style.fontWeight = "bold";
+        overlay.style.fontSize = "40px";
+        // Pause the music
+        audio.pause();
+        // Show Home button if desired (assumes homeBtn exists)
+        document.getElementById("homeBtn").style.display = "block";
+      } else {
+        isPaused = false;
+        const overlay = document.getElementById("gameOver");
+        overlay.style.display = "none";
+        document.getElementById("homeBtn").style.display = "none";
+        // Resume music playback
+        audio.play();
+        animate();
+      }
+    }
+  });
   </script>
 </body>
 </html>
