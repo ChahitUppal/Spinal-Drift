@@ -176,22 +176,38 @@
       <button id="howToPlayBtn">How to Play</button>
       <button id="startGameMenuBtn" style="margin-left: 20px;" type="button">Start Game</button>
     </div>
-    <!-- How to Play Overlay -->
-    <div id="howToPlayOverlay" style="display:none; position: absolute; top: 10%; left: 10%; width:80%; height:80%; background: rgba(0,0,0,0.8); color: white; padding:20px; overflow: auto; z-index:3;">
-      <h2>How to Play</h2>
-      <ol>
-        <li><strong>Steer with Tilt:</strong> Tilt your device to control the car’s direction.</li>
-        <li><strong>Avoid Obstacles:</strong> Stay clear of parked cars and other hazards. If you leave the road boundaries, you will incur penalties.</li>
-        <li><strong>Collect Coins:</strong> Coins are scattered along the road. Collect them to earn bonus points.</li>
-        <li><strong>Pause the Game:</strong> Press the <em>Spacebar</em> at any time to pause or resume the game.</li>
-        <li><strong>Handle Curves & Bridges:</strong> Some road segments curve or feature construction zones. Adjust your tilt to maintain control and stay on track.</li>
-        <li><strong>Score Calculation:</strong> Your score increases with distance traveled and coins collected but decreases with penalties for off-track driving or collisions.</li>
-        <li><strong>Game Duration:</strong> Select your desired game duration from the menu before starting.</li>
-        <li><strong>Crash and Penalties:</strong> Collisions with obstacles result in a crash and loss of points. Drive carefully!</li>
-      </ol>
-      <button id="closeHowToPlay" type="button">Close</button>      
-    </div>
-  </div>
+ <!-- How to Play Overlay -->
+  <div id="howToPlayOverlay"
+    style="
+      display: none; 
+      position: absolute; 
+      top: 10%; 
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;           /* Fixed width */
+      max-width: 80%;         /* Shrinks on narrower screens */
+      height: auto; 
+      max-height: 60%; 
+      background: rgba(0,0,0,0.8); 
+      color: white; 
+      padding: 20px; 
+      overflow: auto; 
+      z-index: 3;
+    ">
+  <h2>How to Play</h2>
+  <ol>
+    <li><strong>Steer with Tilt:</strong> Tilt your device to control the car’s direction.</li>
+    <li><strong>Avoid Obstacles:</strong> Stay clear of parked cars and other hazards. If you leave the road boundaries, you will incur penalties.</li>
+    <li><strong>Collect Coins:</strong> Coins are scattered along the road. Collect them to earn bonus points.</li>
+    <li><strong>Pause the Game:</strong> Press the <em>Spacebar</em> at any time to pause or resume the game.</li>
+    <li><strong>Handle Curves & Construction:</strong> Some road segments curve or feature construction zones. Adjust your tilt to maintain control and stay on track.</li>
+    <li><strong>Score Calculation:</strong> Your score increases with distance traveled and coins collected but decreases with penalties for off-track driving or collisions.</li>
+    <li><strong>Game Duration:</strong> Select your desired game duration from the menu before starting.</li>
+    <li><strong>Crash and Penalties:</strong> Collisions with obstacles result in a crash and loss of points. Drive carefully!</li>
+  </ol>
+  <button id="closeHowToPlay" type="button">Close</button>
+</div>
+
 
 
   <script>
@@ -200,6 +216,8 @@
     // ----------------------
     let scene, camera, renderer;
     let isPaused = false;
+    let isCountdownActive = false;
+    let gestureRestartTriggered = false;
     let player;                // The player's car (Group object)
     let obstacles = [];        // Array of obstacle (parked) cars
     let coins = [];            // Array of collectible coins
@@ -215,6 +233,21 @@
     let totalDistance = 0;
     let effectiveScore = 0;
     let constructionSpeedFactor = 1;
+    let lastNonDefault = false; // true if last segment was construction or curved
+
+
+    const DISTRIBUTION_WINDOW_MS = 30000; // 30 seconds
+
+    // Fixed counts for non-default segments (construction and curved)
+    const FIXED_NON_DEFAULT = {
+      construction: 3,
+      curvedRoad: 2
+    };
+
+    // Global variables for the current window:
+    let distributionWindowStart = performance.now();
+    let nonDefaultBucket = buildNonDefaultBucket();
+
 
     // Global variable for player name
     let playerName = "";
@@ -296,7 +329,7 @@
     }
 
     // Global flag to ensure no two consecutive construction segments.
-    let lastSegmentBridge = false;
+    let lastSegmentConstruction = false;
 
     // ----------------------
     // Create a simple cartoon car for the player, oriented along +Z
@@ -445,6 +478,23 @@
             flash.style.opacity = 1 - (elapsedFlash / fadeOutTime);
           }
         }, 16);
+    }
+
+    function buildNonDefaultBucket() {
+      const bucket = [];
+      for (let i = 0; i < FIXED_NON_DEFAULT.construction; i++) {
+        bucket.push("construction");
+      }
+      for (let i = 0; i < FIXED_NON_DEFAULT.curvedRoad; i++) {
+        bucket.push("curvedRoad");
+      }
+      
+      // Shuffle the bucket (Fisher–Yates shuffle)
+      for (let i = bucket.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bucket[i], bucket[j]] = [bucket[j], bucket[i]];
+      }
+      return bucket;
     }
 
     function animateCrash(object) {
@@ -839,7 +889,7 @@
           // Store safe zone boundaries, etc.
           cautionRoad.userData = {
             segmentType: "construction",
-            isBridge: true,
+            isConstruction: true,
             zone1: 4,
             zone2: 6,
             zone3: 8,
@@ -955,33 +1005,84 @@
     // Unified function to spawn a segment chunk.
     // ----------------------
     function spawnChunk(zStart) {
+      const now = performance.now();
+      
+      // Reset the window if 30 seconds have passed
+      if (now - distributionWindowStart >= DISTRIBUTION_WINDOW_MS) {
+        distributionWindowStart = now;
+        nonDefaultBucket = buildNonDefaultBucket();
+      }
+      
       let segmentType;
-      if (zStart === 0 || lastSegmentBridge) {
+      
+      // Always force a default segment if this is the first segment or if the last one was non-default.
+      if (zStart === 0 || lastNonDefault) {
         segmentType = "straightRoad";
+        lastNonDefault = false; // Reset after forcing default.
+        // If available, and if a non-default item exists in the bucket, remove one instance.
+        const idx = nonDefaultBucket.indexOf("straightRoad");
+        if (idx !== -1) {
+          nonDefaultBucket.splice(idx, 1);
+        }
       } else {
-        const rand = Math.random();
-        if (rand < 0.15) {
-          segmentType = "construction";
-        } else if (rand < 0.35) {
-          segmentType = "curvedRoad";
-        } else {
-          segmentType = "straightRoad";
+        // Default segment type is straight road
+        segmentType = "straightRoad";
+        
+        // Check if there are non-default segments available in the bucket.
+        if (nonDefaultBucket.length > 0) {
+          // Calculate how much time remains in the window.
+          let timeRemaining = DISTRIBUTION_WINDOW_MS - (now - distributionWindowStart);
+          
+          // With a fixed chance (e.g., 30%) use a non-default segment.
+          // Also, if less than 1 second remains, force a non-default spawn.
+          if (timeRemaining < 1000 || Math.random() < 0.3) {
+            // Get the next non-default segment from the bucket.
+            segmentType = nonDefaultBucket.shift();
+          }
         }
       }
+      
+      // Spawn the segment using the chosen type.
       let baseLength = segmentTypes[segmentType].length;
       let segmentLength = baseLength * (0.8 + Math.random() * 0.4);
       segmentTypes[segmentType].spawn(zStart, segmentLength);
-      lastSegmentBridge = (segmentType === "construction");
+      
+      // Update the lastNonDefault flag:
+      // If the spawned segment is non-default, set lastNonDefault true; otherwise, false.
+      if (segmentType === "construction" || segmentType === "curvedRoad") {
+        lastNonDefault = true;
+      } else {
+        lastNonDefault = false;
+      }
+      
+      // Advance the spawn pointer.
       spawnZ += segmentLength;
     }
+
 
     // ----------------------
     // Initialize the three.js scene and game objects
     // ----------------------
     function init() {
-      if (renderer && renderer.domElement) {
-        document.body.removeChild(renderer.domElement);
+      // Reset game state variables.
+      isPaused = false;
+      gameOver = false;
+      score = 0;
+      coinBonus = 0;
+      penalty = 0;
+      totalDistance = 0;
+      effectiveScore = 0;
+
+      // Hide game over and restart overlays.
+      document.getElementById("gameOver").style.display = "none";
+      document.getElementById("restartGameBtn").style.display = "none";
+
+      // Remove any existing canvas.
+      if (renderer && renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
+
+      // Create new renderer and new scene objects.
       var carColor = window.selectedCarColor;
       player = createCartoonCar(carColor);
       scene = new THREE.Scene();
@@ -994,26 +1095,24 @@
       renderer.domElement.style.position = "absolute";
       renderer.domElement.style.zIndex = "0";
       document.body.appendChild(renderer.domElement);
+
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       scene.add(ambientLight);
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(0, 50, -50);
-      player = createCartoonCar(carColor);
       scene.add(directionalLight);
+
+      // Add the player car.
       player.position.set(0, 0, 0);
       scene.add(player);
+
+      // Reset map objects.
       spawnZ = 0;
       obstacles = [];
       roadSegments = [];
       coins = [];
-      coinBonus = 0;
-      penalty = 0;
-      score = 0;
-      effectiveScore = 0;
-      gameOver = false;
-      document.getElementById("gameOver").style.display = "none";
-      document.getElementById("restartGameBtn").style.display = "none";
-      lastSegmentBridge = false;
+
+      lastSegmentConstruction = false;
       spawnChunk(spawnZ);
       window.addEventListener('resize', onWindowResize, false);
       const timeSelect = document.getElementById("gameTimeSelect");
@@ -1022,6 +1121,7 @@
       gameStartTime = performance.now();
       animate();
     }
+
 
     // ----------------------
     // Adjust camera and renderer on window resize
@@ -1066,6 +1166,8 @@
     function updateHighScore() {
       if (effectiveScore > highScore) {
         highScore = effectiveScore;
+        // Save the high score to localStorage so it persists across sessions
+        localStorage.setItem("highScore", highScore);
       }
       document.getElementById("highScore").textContent = "High Score: " + highScore;
     }
@@ -1074,7 +1176,7 @@
     // The main animation loop
     // ----------------------
     function animate() {
-         // Check if the player is on any bridge segment
+         // Check if the player is on any construction segment
          onConstruction = false;
          for (let seg of roadSegments) {
            if (seg.userData && seg.userData.segmentType === "construction") {
@@ -1085,7 +1187,7 @@
           }
         }
 
-        // If not on a bridge, reset the bridge speed factor
+        // If not on a construction, reset the construction speed factor
         if (!onConstruction) {
           constructionSpeedFactor = 1;
         }
@@ -1204,6 +1306,7 @@
     // Countdown function before starting the game
     // ----------------------
     function startCountdown(callback) {
+      isCountdownActive = true;
       const countdownEl = document.getElementById("countdown");
       let count = 3;
       countdownEl.style.display = "block";
@@ -1217,12 +1320,15 @@
           countdownEl.textContent = "Go!";
           setTimeout(() => {
             countdownEl.style.display = "none";
+            isCountdownActive = false;
+            gestureRestartTriggered = false; // Reset gesture flag for new game
             callback();
           }, 500);
         }
       }, 1000);
       playRandomAudio();
     }
+
 
     // ----------------------
     // WebSocket (IMU Data) Code
@@ -1274,23 +1380,30 @@
     let yThresholdStartTime = null;
 
     function detectGesture(tilt) {
-      // Only trigger restart if game over is showing
-      if (document.getElementById("gameOver").style.display != "none") {
-        const maxTiltThreshold = 0.9; // Adjust as needed
-        if (Math.abs(tilt.y) >= maxTiltThreshold) {
-          if (!restartTiltStartTime) {
-            restartTiltStartTime = Date.now();
-          } else if (Date.now() - restartTiltStartTime >= 1500) { // Held for 2 seconds
-            restartGame();
-            restartTiltStartTime = null;
-            return;
-          }
-        } else {
-          // Reset timer if tilt is below threshold
+      // Only enable restart gesture if game is paused or over AND no countdown is active.
+      if (!(isPaused || gameOver) || isCountdownActive) {
+        restartTiltStartTime = null;
+        return;
+      }
+      
+      // Only allow one restart gesture trigger until the game resets.
+      if (gestureRestartTriggered) return;
+      
+      const maxTiltThreshold = 0.9; // Adjust threshold as needed.
+      if (Math.abs(tilt.y) >= maxTiltThreshold) {
+        if (!restartTiltStartTime) {
+          restartTiltStartTime = Date.now();
+        } else if (Date.now() - restartTiltStartTime >= 1500) { // Held for 1.5 seconds.
+          restartGame();
+          gestureRestartTriggered = true;
           restartTiltStartTime = null;
+          return;
         }
+      } else {
+        restartTiltStartTime = null;
       }
     }
+
 
 
     document.getElementById("restartGameBtn").addEventListener("click", function() {
@@ -1298,7 +1411,28 @@
     });
     
     document.getElementById("homeBtn").addEventListener("click", function() {
-      window.location.reload();
+      // Stop the game if it's running
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+      gameOver = true;
+      isPaused = false;
+
+      // Hide the renderer's canvas if it exists
+      if (renderer && renderer.domElement) {
+        renderer.domElement.style.display = "none";
+      }
+
+      // Hide game HUD and control elements
+      document.getElementById("gameOver").style.display = "none";
+      document.getElementById("restartGameBtn").style.display = "none";
+      document.getElementById("stopwatch").style.display = "none";
+      document.getElementById("score").style.display = "none";
+      document.getElementById("highScore").style.display = "none";
+      document.getElementById("homeBtn").style.display = "none";
+      
+      // Show the home/menu screen overlay
+      document.getElementById("menuScreen").style.display = "block";
     });
 
 
@@ -1312,26 +1446,41 @@
     })();
 
     // NEW: How To Play overlay toggle
-    document.getElementById("howToPlayBtn").addEventListener("click", function() {
-      document.getElementById("howToPlayOverlay").style.display = "block";
-    });
+    document.getElementById("howToPlayBtn").addEventListener("click", toggleHowToPlay);
+    document.getElementById("closeHowToPlay").addEventListener("click", toggleHowToPlay);
 
-    document.getElementById("closeHowToPlay").addEventListener("click", function() {
-      document.getElementById("howToPlayOverlay").style.display = "none";
-    });
-
+    function toggleHowToPlay() {
+      const overlay = document.getElementById("howToPlayOverlay");
+      // If the overlay is hidden, show it; otherwise hide it
+      if (!overlay.style.display || overlay.style.display === "none") {
+        overlay.style.display = "block";
+      } else {
+        overlay.style.display = "none";
+      }
+    }
     document.getElementById("startGameMenuBtn").addEventListener("click", function() {
       const chosenColor = document.getElementById("vehicleColor").value;
-      // Store the selected color in a global variable for use in init():
       window.selectedCarColor = parseInt(chosenColor.replace("#", "0x"));
+
+      // Hide the menu overlay.
       document.getElementById("menuScreen").style.display = "none";
-      // Show game HUD elements (score, highScore, stopwatch)
+
+      // Remove any previous canvas so no old map is visible.
+      if (renderer && renderer.domElement) {
+        renderer.domElement.remove();
+        renderer = null;
+      }
+
+      // Ensure the HUD elements are ready to be shown later.
       document.getElementById("score").style.display = "block";
       document.getElementById("highScore").style.display = "block";
       document.getElementById("stopwatch").style.display = "block";
-      // Instead of clicking a hidden button, start the game directly:
+      
+      // Start countdown, which will initialize a new game scene.
       startCountdown(init);
     });
+
+
 
     // NEW: Update title color when vehicle color is changed
     document.getElementById("vehicleColor").addEventListener("input", function() {
@@ -1341,27 +1490,29 @@
   });
 
   document.addEventListener("keydown", function(e) {
-    if (e.code === "Space") {
-      if (gameOver) {
-        restartGame();
-        return;
-      }
-    if (!isPaused) {
-      isPaused = true;
-      cancelAnimationFrame(animationId);
-      const overlay = document.getElementById("gameOver");
-      overlay.textContent = "Paused";
-      overlay.style.display = "block";
-      overlay.style.color = "#ffffff";
-      overlay.style.fontWeight = "bold";
-      overlay.style.fontSize = "40px"; 
-      audio.pause();
-      document.getElementById("homeBtn").style.display = "block";
-      } else {
+      if (e.code === "Space" && !isCountdownActive) {
+        if (gameOver) {
+          restartGame();
+          return;
+        }
+        if (!isPaused) {
+          isPaused = true;
+          cancelAnimationFrame(animationId);
+          const overlay = document.getElementById("gameOver");
+          overlay.textContent = "Paused";
+          overlay.style.display = "block";
+          overlay.style.color = "#ffffff";
+          overlay.style.fontWeight = "bold";
+          overlay.style.fontSize = "40px"; 
+          audio.pause();
+          document.getElementById("homeBtn").style.display = "block";
+          document.getElementById("restartGameBtn").style.display = "block";
+        } else {
           isPaused = false;
           const overlay = document.getElementById("gameOver");
           overlay.style.display = "none";
           document.getElementById("homeBtn").style.display = "none";
+          document.getElementById("restartGameBtn").style.display = "none";
           audio.play();
           animate();
         }
